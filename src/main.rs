@@ -1,4 +1,4 @@
-// this just creates boot configs for everything
+// this just creates generation boot configs
 // accepts a list of system profiles / generations
 
 use std::collections::HashMap;
@@ -47,16 +47,61 @@ type BootJson = BootJsonV1;
 
 fn main() {
     // this will eventually accept a list of profiles / generations with which to generate bootloader configs
+    // let generations = argv[1..]
 
-    // for each entry:
-    // let generation = 1;
+    // maybe don't enumerate but just extract the number from the link?
+    // for (i, generation) in generations.enumerate() {}
     let json = std::fs::read_to_string("boot.v1.json").unwrap();
     let parsed: BootJson = serde_json::from_str(&json).unwrap();
 
-    systemd_entry(&parsed);
+    systemd_entry(&parsed, None);
     // grub_entry(&parsed);
 }
 
+fn systemd_entry(json: &BootJson, specialisation: Option<&str>) {
+    let ctime = fs::metadata(&json.toplevel.0).unwrap().ctime();
+    let date = Utc.timestamp(ctime, 0).format("%F");
+    let description = format!(
+        "NixOS {system_version}{specialisation}, Linux Kernel {kernel_version}, Built on {date}",
+        specialisation = if let Some(specialisation) = specialisation {
+            format!(", Specialisation {}", specialisation)
+        } else {
+            format!("")
+        },
+        system_version = json.system_version,
+        kernel_version = json.kernel_version,
+        date = date,
+    );
+
+    let data = format!(
+        r#"title NixOS
+version Generation {generation} {description}
+linux /efi/nixos/{linux}.efi
+initrd /efi/nixos/{initrd}.efi
+options init={init} {params}
+machine-id {machine_id}
+"#,
+        generation = 1,
+        description = description,
+        linux = json.kernel,
+        initrd = json.initrd,
+        init = json.init,
+        params = json.kernel_params.join(" "),
+        // TODO: get /etc/machine-id or generate with `systemd-machine-id-setup --print`
+        machine_id = "asdf",
+    );
+
+    println!("{}", data);
+
+    // generate entries for specialisations
+    for (name, path) in &json.specialisation {
+        let json = fs::read_to_string(&path.0).unwrap();
+        let parsed: BootJson = serde_json::from_str(&json).unwrap();
+        systemd_entry(&parsed, Some(&name.0));
+    }
+}
+
+/*
 fn grub_entry(json: &BootJson) {
     let data = format!(
         r#"menuentry "NixOS - {profile}" {options} {{
@@ -79,31 +124,4 @@ initrd {initrd}
 
     println!("{}", data);
 }
-
-fn systemd_entry(json: &BootJson) {
-    let ctime = fs::metadata(&json.toplevel.0).unwrap().ctime();
-    let date = Utc.timestamp(ctime, 0).format("%Y-%m-%d");
-
-    let data = format!(
-        r#"title NixOS
-version Generation {generation} {description}
-linux {esp}/efi/nixos/{linux}.efi
-initrd {esp}/efi/nixos/{initrd}.efi
-options init={init} {params}
-machine-id {machine_id}
-"#,
-        generation = 1,
-        description = format!(
-            "NixOS {}, Linux Kernel {}, Built on {}",
-            json.system_version, json.kernel_version, date
-        ),
-        linux = json.kernel,
-        initrd = json.initrd,
-        init = json.init,
-        params = json.kernel_params.join(" "),
-        machine_id = "asdf", // TODO: get /etc/machine-id or generate with `systemd-machine-id-setup --print`
-        esp = "",
-    );
-
-    println!("{}", data);
-}
+*/
