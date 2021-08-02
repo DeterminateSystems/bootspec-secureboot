@@ -2,10 +2,13 @@
 // accepts a list of system profiles / generations
 
 use std::collections::HashMap;
-use std::fs::{self};
-// use std::io::{self, Write};
+use std::env;
+use std::error::Error;
+use std::fmt::Write as _;
+use std::fs::{self, File};
+use std::io::{self, Write};
 use std::os::unix::fs::MetadataExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use chrono::{TimeZone, Utc};
 use serde::{Deserialize, Serialize};
@@ -32,11 +35,11 @@ struct BootJsonV1 {
     /// list of kernel parameters
     kernel_params: Vec<String>,
     /// Path to the init script
-    init: String,
+    init: PathBuf,
     /// Path to initrd -- $toplevel/initrd
     initrd: String,
     /// Path to "append-initrd-secrets" script -- $toplevel/append-initrd-secrets
-    initrd_secrets: String,
+    initrd_secrets: PathBuf,
     /// Mapping of specialisation names to their configuration's boot.json -- to add all specialisations as a boot entry
     specialisation: HashMap<SpecialisationName, BootJsonPath>,
     /// config.system.build.toplevel path
@@ -44,21 +47,127 @@ struct BootJsonV1 {
 }
 
 type BootJson = BootJsonV1;
+type Result<T, E = Box<dyn Error + Send + Sync + 'static>> = core::result::Result<T, E>;
+
+const SCHEMA_VERSION: usize = 1;
+const JSON_FILENAME: &'static str = "boot.v1.json";
 
 fn main() {
+    // if len(args) < 2, quit
     // this will eventually accept a list of profiles / generations with which to generate bootloader configs
-    // let generations = argv[1..]
+    let generations = env::args().skip(1);
+    // basically [/nix/var/nix/profiles/system-69-link, /nix/var/nix/profiles/system-70-link, ...]
 
-    // maybe don't enumerate but just extract the number from the link?
-    // for (i, generation) in generations.enumerate() {}
-    let json = std::fs::read_to_string("boot.v1.json").unwrap();
-    let parsed: BootJson = serde_json::from_str(&json).unwrap();
+    for generation in generations {
+        let generation = generation.strip_suffix('/').unwrap_or(&generation);
+        // dbg!(&generation);
+        let link = generation
+            .strip_prefix("/nix/var/nix/profiles/system-")
+            .unwrap_or(generation);
+        let i = link
+            .strip_suffix("-link")
+            .unwrap_or("0")
+            .parse::<usize>()
+            .unwrap();
+        // dbg!(link, i);
 
-    systemd_entry(&parsed, None);
-    // grub_entry(&parsed);
+        let jsonpath = format!("{}/{}", generation, JSON_FILENAME);
+        // let jsonpath = JSON_FILENAME;
+        let json: BootJson = if Path::new(&jsonpath).exists() {
+            let contents = std::fs::read_to_string(JSON_FILENAME).unwrap();
+            serde_json::from_str(&contents).unwrap()
+        } else {
+            synth_data(PathBuf::from(generation)).unwrap()
+        };
+
+        let mut f = File::create(format!("testdir/nixos-generation-{}.conf", i)).unwrap();
+        write!(f, "{}", systemd_entry(&json, i, None)).unwrap();
+
+        // generate entries for specialisations
+        // TODO: specialisation in filename is required, but will mess up sorting...
+        // can we have multiple entries in one file? that would be ideal...
+        for (name, path) in &json.specialisation {
+            let json = fs::read_to_string(&path.0).unwrap();
+            let parsed: BootJson = serde_json::from_str(&json).unwrap();
+
+            let mut f =
+                File::create(format!("testdir/nixos-generation-{}-{}.conf", i, name.0)).unwrap();
+            write!(f, "{}", systemd_entry(&parsed, i, Some(&name.0))).unwrap();
+        }
+    }
+
+    // systemd_entry(&json, None);
+    // grub_entry(&json);
 }
 
-fn systemd_entry(json: &BootJson, specialisation: Option<&str>) {
+// TODO: better name
+fn synth_data(generation: PathBuf) -> Result<BootJson> {
+    let generation = generation.canonicalize()?;
+
+    let system_version = fs::read_to_string(generation.join("nixos-version"))?;
+
+    let kernel_path = fs::canonicalize(generation.join("kernel-modules/bzImage"))?;
+    let kernel = kernel_path
+        .strip_prefix("/nix/store/")?
+        .display()
+        .to_string()
+        .replace("/", "-");
+
+    let kernel_modules = fs::canonicalize(generation.join("kernel-modules/lib/modules"))?;
+    let kernel_glob = glob::glob(&format!("{}/*", kernel_modules.display()))?
+        .next()
+        .unwrap()?;
+    let kernel_version = kernel_glob.file_name().unwrap().to_str().unwrap();
+
+    let kernel_params: Vec<String> = fs::read_to_string(generation.join("kernel-params"))?
+        .split(' ')
+        .map(|e| e.to_string())
+        .collect();
+
+    let init = generation.join("init");
+
+    let initrd_path = fs::canonicalize(generation.join("initrd"))?;
+    let initrd = initrd_path
+        .strip_prefix("/nix/store/")?
+        .display()
+        .to_string()
+        .replace("/", "-");
+
+    let initrd_secrets = generation.join("append-initrd-secrets");
+
+    let mut specialisation: HashMap<SpecialisationName, BootJsonPath> = HashMap::new();
+    for spec in glob::glob(&format!(
+        "{}/*",
+        generation.join("specialisation").display()
+    ))? {
+        let spec = spec?;
+        let name = spec.file_name().unwrap().to_str().unwrap();
+        let boot_json = fs::canonicalize(
+            generation.join(format!("specialisation/{}/{}", name, JSON_FILENAME)),
+        )?;
+
+        specialisation.insert(
+            SpecialisationName(name.to_string()),
+            BootJsonPath(boot_json),
+        );
+    }
+
+    Ok(BootJson {
+        schema_version: SCHEMA_VERSION,
+        system_version: system_version,
+        kernel: kernel,
+        kernel_version: kernel_version.to_string(),
+        kernel_params: kernel_params,
+        init: init,
+        initrd: initrd,
+        initrd_secrets: initrd_secrets,
+        toplevel: SystemConfigurationRoot(generation),
+        specialisation: specialisation,
+    })
+}
+
+fn systemd_entry(json: &BootJson, generation: usize, specialisation: Option<&str>) -> String {
+    let machine_id = get_machine_id();
     let ctime = fs::metadata(&json.toplevel.0).unwrap().ctime();
     let date = Utc.timestamp(ctime, 0).format("%F");
     let description = format!(
@@ -81,24 +190,24 @@ initrd /efi/nixos/{initrd}.efi
 options init={init} {params}
 machine-id {machine_id}
 "#,
-        generation = 1,
+        generation = generation,
         description = description,
         linux = json.kernel,
         initrd = json.initrd,
-        init = json.init,
+        init = json.init.display(),
         params = json.kernel_params.join(" "),
-        // TODO: get /etc/machine-id or generate with `systemd-machine-id-setup --print`
-        machine_id = "asdf",
+        machine_id = machine_id,
     );
 
-    println!("{}", data);
+    let mut out = String::new();
+    write!(out, "{}", data).unwrap();
 
-    // generate entries for specialisations
-    for (name, path) in &json.specialisation {
-        let json = fs::read_to_string(&path.0).unwrap();
-        let parsed: BootJson = serde_json::from_str(&json).unwrap();
-        systemd_entry(&parsed, Some(&name.0));
-    }
+    out
+}
+
+// TODO: get /etc/machine-id or generate with `systemd-machine-id-setup --print`
+fn get_machine_id() -> String {
+    String::from("asdfff")
 }
 
 /*
