@@ -4,9 +4,8 @@
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
-use std::fmt::Write as _;
 use std::fs::{self, File};
-use std::io::{self, Write};
+use std::io::Write;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -61,7 +60,6 @@ fn main() {
 
     for generation in generations {
         let generation = generation.strip_suffix('/').unwrap_or(&generation);
-        // dbg!(&generation);
         let link = generation
             .strip_prefix("/nix/var/nix/profiles/system-")
             .unwrap_or(generation);
@@ -70,35 +68,18 @@ fn main() {
             .unwrap_or("0")
             .parse::<usize>()
             .unwrap();
-        // dbg!(link, i);
 
-        let jsonpath = format!("{}/{}", generation, JSON_FILENAME);
-        // let jsonpath = JSON_FILENAME;
-        let json: BootJson = if Path::new(&jsonpath).exists() {
-            let contents = std::fs::read_to_string(JSON_FILENAME).unwrap();
+        let json_path = format!("{}/{}", generation, JSON_FILENAME);
+        let json: BootJson = if Path::new(&json_path).exists() {
+            let contents = std::fs::read_to_string(&json_path).unwrap();
             serde_json::from_str(&contents).unwrap()
         } else {
             synth_data(PathBuf::from(generation)).unwrap()
         };
 
-        let mut f = File::create(format!("testdir/nixos-generation-{}.conf", i)).unwrap();
-        write!(f, "{}", systemd_entry(&json, i, None)).unwrap();
-
-        // generate entries for specialisations
-        // TODO: specialisation in filename is required, but will mess up sorting...
-        // can we have multiple entries in one file? that would be ideal...
-        for (name, path) in &json.specialisation {
-            let json = fs::read_to_string(&path.0).unwrap();
-            let parsed: BootJson = serde_json::from_str(&json).unwrap();
-
-            let mut f =
-                File::create(format!("testdir/nixos-generation-{}-{}.conf", i, name.0)).unwrap();
-            write!(f, "{}", systemd_entry(&parsed, i, Some(&name.0))).unwrap();
-        }
+        systemd_entry(&json, i, None);
+        // grub_entry(&json, i);
     }
-
-    // systemd_entry(&json, None);
-    // grub_entry(&json);
 }
 
 // TODO: better name
@@ -115,7 +96,8 @@ fn synth_data(generation: PathBuf) -> Result<BootJson> {
         .replace("/", "-");
 
     let kernel_modules = fs::canonicalize(generation.join("kernel-modules/lib/modules"))?;
-    let kernel_glob = glob::glob(&format!("{}/*", kernel_modules.display()))?
+    let kernel_glob = fs::read_dir(kernel_modules)?
+        .map(|res| res.map(|e| e.path()))
         .next()
         .unwrap()?;
     let kernel_version = kernel_glob.file_name().unwrap().to_str().unwrap();
@@ -137,10 +119,7 @@ fn synth_data(generation: PathBuf) -> Result<BootJson> {
     let initrd_secrets = generation.join("append-initrd-secrets");
 
     let mut specialisation: HashMap<SpecialisationName, BootJsonPath> = HashMap::new();
-    for spec in glob::glob(&format!(
-        "{}/*",
-        generation.join("specialisation").display()
-    ))? {
+    for spec in fs::read_dir(generation.join("specialisation"))?.map(|res| res.map(|e| e.path())) {
         let spec = spec?;
         let name = spec.file_name().unwrap().to_str().unwrap();
         let boot_json = fs::canonicalize(
@@ -167,7 +146,7 @@ fn synth_data(generation: PathBuf) -> Result<BootJson> {
     })
 }
 
-fn systemd_entry(json: &BootJson, generation: usize, specialisation: Option<&str>) -> String {
+fn systemd_entry(json: &BootJson, generation: usize, specialisation: Option<&str>) {
     let machine_id = get_machine_id();
     let ctime = fs::metadata(&json.toplevel.0).unwrap().ctime();
     let date = Utc.timestamp(ctime, 0).format("%F");
@@ -200,14 +179,33 @@ machine-id {machine_id}
         machine_id = machine_id,
     );
 
-    let mut out = String::new();
-    write!(out, "{}", data).unwrap();
+    // FIXME: placeholder dir
+    const DIR: &'static str = "boot/entries";
+    fs::create_dir_all(DIR).unwrap();
 
-    out
+    let mut f = if let Some(specialisation) = specialisation {
+        // TODO: the specialisation in filename is required (or it conflicts with other entries), but will mess up sorting...
+        File::create(format!(
+            "{}/nixos-generation-{}-{}.conf",
+            DIR, generation, specialisation
+        ))
+        .unwrap()
+    } else {
+        File::create(format!("{}/nixos-generation-{}.conf", DIR, generation)).unwrap()
+    };
+
+    write!(f, "{}", data).unwrap();
+
+    for (name, path) in &json.specialisation {
+        let json = fs::read_to_string(&path.0).unwrap();
+        let parsed: BootJson = serde_json::from_str(&json).unwrap();
+
+        systemd_entry(&parsed, generation, Some(&name.0));
+    }
 }
 
 fn get_machine_id() -> String {
-    if Path::new("/etc/machine-id").exists() {
+    let machine_id = if Path::new("/etc/machine-id").exists() {
         fs::read_to_string("/etc/machine-id").expect("error reading machine-id")
     } else {
         String::from_utf8(
@@ -218,7 +216,9 @@ fn get_machine_id() -> String {
                 .stdout,
         )
         .expect("found invalid UTF-8")
-    }
+    };
+
+    machine_id.trim().to_string()
 }
 
 /*
