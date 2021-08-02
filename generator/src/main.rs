@@ -1,6 +1,12 @@
 // this just creates generation boot configs
 // accepts a list of system profiles / generations
 
+// to create the bootloader profile:
+// 1. cd (mktemp -d)
+// 2. run this to get boot/entries/...
+// 3. nix-store --add ./somepath
+// 4. then nix-env -p /nix/var/nix/profiles/bootloader --set ...
+
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
@@ -12,7 +18,6 @@ use std::process::Command;
 
 use chrono::{TimeZone, Utc};
 use serde::{Deserialize, Serialize};
-// use serde_json::Result;
 
 #[derive(Debug, Default, Deserialize, Serialize, PartialEq, Eq, Hash)]
 struct SpecialisationName(String);
@@ -59,6 +64,10 @@ fn main() {
     // basically [/nix/var/nix/profiles/system-69-link, /nix/var/nix/profiles/system-70-link, ...]
 
     for generation in generations {
+        if generation.is_empty() {
+            continue;
+        }
+
         let generation = generation.strip_suffix('/').unwrap_or(&generation);
         let link = generation
             .strip_prefix("/nix/var/nix/profiles/system-")
@@ -180,7 +189,7 @@ machine-id {machine_id}
     );
 
     // FIXME: placeholder dir
-    const DIR: &'static str = "boot/entries";
+    const DIR: &'static str = "systemd-boot-entries/loader/entries";
     fs::create_dir_all(DIR).unwrap();
 
     let mut f = if let Some(specialisation) = specialisation {
@@ -221,6 +230,8 @@ fn get_machine_id() -> String {
     machine_id.trim().to_string()
 }
 
+// Generate the entries, but have the installer create the overall grub.cfg
+// write to grub.entries file, pass that to the installer?
 /*
 fn grub_entry(json: &BootJson) {
     let data = format!(
