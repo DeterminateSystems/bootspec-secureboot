@@ -9,6 +9,7 @@ use std::fs::{self, File};
 use std::io::{self, Write};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use chrono::{TimeZone, Utc};
 use serde::{Deserialize, Serialize};
@@ -205,9 +206,19 @@ machine-id {machine_id}
     out
 }
 
-// TODO: get /etc/machine-id or generate with `systemd-machine-id-setup --print`
 fn get_machine_id() -> String {
-    String::from("asdfff")
+    if Path::new("/etc/machine-id").exists() {
+        fs::read_to_string("/etc/machine-id").expect("error reading machine-id")
+    } else {
+        String::from_utf8(
+            Command::new("systemd-machine-id-setup")
+                .arg("--print")
+                .output()
+                .expect("failed to execute systemd-machine-id-setup")
+                .stdout,
+        )
+        .expect("found invalid UTF-8")
+    }
 }
 
 /*
