@@ -1,22 +1,29 @@
 // this just creates generation boot configs
 // accepts a list of system profiles / generations
 
+// TODO: better error handling
+//  -> just replace unwraps with expects for now
+
 // to create the bootloader profile:
+// (do this in the installer package?)
 // 1. cd (mktemp -d)
 // 2. run this to get boot/entries/...
 // 3. nix-store --add ./somepath
-// 4. then nix-env -p /nix/var/nix/profiles/bootloader --set ...
+// 4a. make sure bootloader profile doesn't exist (or is ours)?
+// 4b. then nix-env -p /nix/var/nix/profiles/bootloader --set ...
 
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
 use std::fs::{self, File};
 use std::io::Write;
+use std::os::unix;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use chrono::{TimeZone, Utc};
+use chrono::{Local, TimeZone};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Deserialize, Serialize, PartialEq, Eq, Hash)]
@@ -34,7 +41,7 @@ struct BootJsonV1 {
     /// NixOS version
     system_version: String,
     /// Path to kernel (bzImage) -- $toplevel/kernel
-    kernel: String,
+    kernel: PathBuf,
     /// Kernel version
     kernel_version: String,
     /// list of kernel parameters
@@ -42,7 +49,7 @@ struct BootJsonV1 {
     /// Path to the init script
     init: PathBuf,
     /// Path to initrd -- $toplevel/initrd
-    initrd: String,
+    initrd: PathBuf,
     /// Path to "append-initrd-secrets" script -- $toplevel/append-initrd-secrets
     initrd_secrets: PathBuf,
     /// Mapping of specialisation names to their configuration's boot.json -- to add all specialisations as a boot entry
@@ -57,7 +64,14 @@ type Result<T, E = Box<dyn Error + Send + Sync + 'static>> = core::result::Resul
 const SCHEMA_VERSION: usize = 1;
 const JSON_FILENAME: &'static str = "boot.v1.json";
 
+lazy_static::lazy_static! {
+    static ref SYSTEM_RE: Regex = Regex::new("/profiles/system-(?P<generation>\\d+)-link").unwrap();
+    static ref PROFILE_RE: Regex = Regex::new("/system-profiles/(?P<profile>[^-]+)-(?P<generation>\\d+)-link").unwrap();
+}
+
 fn main() {
+    env::set_var("RUST_BACKTRACE", "1");
+    // TODO: --out-dir?
     // if len(args) < 2, quit
     // this will eventually accept a list of profiles / generations with which to generate bootloader configs
     let generations = env::args().skip(1);
@@ -68,26 +82,30 @@ fn main() {
             continue;
         }
 
-        let generation = generation.strip_suffix('/').unwrap_or(&generation);
-        let link = generation
-            .strip_prefix("/nix/var/nix/profiles/system-")
-            .unwrap_or(generation);
-        let i = link
-            .strip_suffix("-link")
-            .unwrap_or("0")
-            .parse::<usize>()
-            .unwrap();
+        let (i, profile) = if PROFILE_RE.is_match(&generation) {
+            let caps = PROFILE_RE.captures(&generation).unwrap();
+            let i = caps["generation"].parse::<usize>().unwrap();
 
-        let json_path = format!("{}/{}", generation, JSON_FILENAME);
+            (i, Some(caps["profile"].to_string()))
+        } else {
+            let caps = SYSTEM_RE.captures(&generation).unwrap();
+            let i = caps["generation"].parse::<usize>().unwrap();
+
+            (i, None)
+        };
+
+        let generation_path = PathBuf::from(&generation);
+        let json_path = format!("{}/{}", generation_path.display(), JSON_FILENAME);
+
         let json: BootJson = if Path::new(&json_path).exists() {
             let contents = std::fs::read_to_string(&json_path).unwrap();
             serde_json::from_str(&contents).unwrap()
         } else {
-            synth_data(PathBuf::from(generation)).unwrap()
+            synth_data(generation_path).unwrap()
         };
 
-        systemd_entry(&json, i, None);
-        // grub_entry(&json, i);
+        systemd_entry(&json, i, profile).unwrap();
+        // grub_entry(&json, i, profile);
     }
 }
 
@@ -97,12 +115,7 @@ fn synth_data(generation: PathBuf) -> Result<BootJson> {
 
     let system_version = fs::read_to_string(generation.join("nixos-version"))?;
 
-    let kernel_path = fs::canonicalize(generation.join("kernel-modules/bzImage"))?;
-    let kernel = kernel_path
-        .strip_prefix("/nix/store/")?
-        .display()
-        .to_string()
-        .replace("/", "-");
+    let kernel = fs::canonicalize(generation.join("kernel-modules/bzImage"))?;
 
     let kernel_modules = fs::canonicalize(generation.join("kernel-modules/lib/modules"))?;
     let kernel_glob = fs::read_dir(kernel_modules)?
@@ -118,12 +131,7 @@ fn synth_data(generation: PathBuf) -> Result<BootJson> {
 
     let init = generation.join("init");
 
-    let initrd_path = fs::canonicalize(generation.join("initrd"))?;
-    let initrd = initrd_path
-        .strip_prefix("/nix/store/")?
-        .display()
-        .to_string()
-        .replace("/", "-");
+    let initrd = fs::canonicalize(generation.join("initrd"))?;
 
     let initrd_secrets = generation.join("append-initrd-secrets");
 
@@ -155,10 +163,36 @@ fn synth_data(generation: PathBuf) -> Result<BootJson> {
     })
 }
 
-fn systemd_entry(json: &BootJson, generation: usize, specialisation: Option<&str>) {
+fn systemd_entry(json: &BootJson, generation: usize, profile: Option<String>) -> Result<()> {
+    systemd_entry_impl(json, generation, &profile, None)
+}
+
+fn systemd_entry_impl(
+    json: &BootJson,
+    generation: usize,
+    profile: &Option<String>,
+    specialisation: Option<&str>,
+) -> Result<()> {
     let machine_id = get_machine_id();
-    let ctime = fs::metadata(&json.toplevel.0).unwrap().ctime();
-    let date = Utc.timestamp(ctime, 0).format("%F");
+    let linux = format!(
+        "/efi/nixos/{}.efi",
+        json.kernel
+            .display()
+            .to_string()
+            .replace("/nix/store/", "")
+            .replace("/", "-")
+    );
+    let initrd = format!(
+        "/efi/nixos/{}.efi",
+        json.initrd
+            .display()
+            .to_string()
+            .replace("/nix/store/", "")
+            .replace("/", "-")
+    );
+
+    let ctime = fs::metadata(&json.toplevel.0)?.ctime();
+    let date = Local.timestamp(ctime, 0).format("%Y-%m-%d");
     let description = format!(
         "NixOS {system_version}{specialisation}, Linux Kernel {kernel_version}, Built on {date}",
         specialisation = if let Some(specialisation) = specialisation {
@@ -171,46 +205,74 @@ fn systemd_entry(json: &BootJson, generation: usize, specialisation: Option<&str
         date = date,
     );
 
+    // The newline at the end of the format string is to ensure that all entries
+    // are byte-identical -- before this, running `diff -r /boot/loader/entries
+    // [output-dir]/loader/entries` would report missing newlines in the
+    // generated entries.
     let data = format!(
         r#"title NixOS
 version Generation {generation} {description}
-linux /efi/nixos/{linux}.efi
-initrd /efi/nixos/{initrd}.efi
+linux {linux}
+initrd {initrd}
 options init={init} {params}
 machine-id {machine_id}
+
 "#,
         generation = generation,
         description = description,
-        linux = json.kernel,
-        initrd = json.initrd,
+        linux = linux,
+        initrd = initrd,
         init = json.init.display(),
         params = json.kernel_params.join(" "),
         machine_id = machine_id,
     );
 
     // FIXME: placeholder dir
-    const DIR: &'static str = "systemd-boot-entries/loader/entries";
-    fs::create_dir_all(DIR).unwrap();
+    const ROOT: &'static str = "systemd-boot-entries";
+    let entries_dir = format!("{}/loader/entries", ROOT);
+    let nixos_dir = format!("{}/efi/nixos", ROOT);
+    fs::create_dir_all(&entries_dir)?;
+    fs::create_dir_all(&nixos_dir)?;
 
-    let mut f = if let Some(specialisation) = specialisation {
-        // TODO: the specialisation in filename is required (or it conflicts with other entries), but will mess up sorting...
-        File::create(format!(
-            "{}/nixos-generation-{}-{}.conf",
-            DIR, generation, specialisation
-        ))
-        .unwrap()
+    let infix = if let Some(profile) = profile {
+        format!("-{}", profile)
     } else {
-        File::create(format!("{}/nixos-generation-{}.conf", DIR, generation)).unwrap()
+        String::new()
     };
 
-    write!(f, "{}", data).unwrap();
+    let mut f = if let Some(specialisation) = specialisation {
+        // TODO: the specialisation in filename is required (or it conflicts with other entries), does this mess up sorting?
+        File::create(format!(
+            "{}/nixos{}-generation-{}-{}.conf",
+            &entries_dir, infix, generation, specialisation
+        ))?
+    } else {
+        File::create(format!(
+            "{}/nixos{}-generation-{}.conf",
+            &entries_dir, infix, generation
+        ))?
+    };
+
+    write!(f, "{}", data)?;
+
+    let kernel_dest = format!("{}/{}", ROOT, linux);
+    if !Path::new(&kernel_dest).exists() {
+        unix::fs::symlink(&json.kernel, kernel_dest)?;
+    }
+
+    let initrd_dest = format!("{}/{}", ROOT, initrd);
+    if !Path::new(&initrd_dest).exists() {
+        unix::fs::symlink(&json.initrd, initrd_dest)?;
+    }
 
     for (name, path) in &json.specialisation {
-        let json = fs::read_to_string(&path.0).unwrap();
-        let parsed: BootJson = serde_json::from_str(&json).unwrap();
+        let json = fs::read_to_string(&path.0)?;
+        let parsed: BootJson = serde_json::from_str(&json)?;
 
-        systemd_entry(&parsed, generation, Some(&name.0));
+        systemd_entry_impl(&parsed, generation, &profile, Some(&name.0))?;
     }
+
+    Ok(())
 }
 
 fn get_machine_id() -> String {
