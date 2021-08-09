@@ -33,34 +33,199 @@
 */
 
 use std::env;
-use std::path::{Path, PathBuf};
+use std::fs::{self, File};
+use std::io::Write;
+// use std::os::unix;
+use std::path::Path;
+use std::process::Command;
 
-use crate::{Result,Args};
+// use generator::systemd_boot;
+use grep_matcher::{Captures, Matcher};
+use grep_regex::RegexMatcher;
+use grep_searcher::sinks::{Bytes, UTF8};
+use grep_searcher::Searcher;
+
+use crate::{util, Args, Result};
 
 pub(crate) fn install(args: Args) -> Result<()> {
-    let _ = (args.toplevel, args.esp, args.can_touch_efi_vars, args.dry_run, args.generated_entries);
-    let _: PathBuf = PathBuf::new();
+    let esp = args.esp.unwrap();
+    let loader = format!("{}/loader/loader.conf", esp.display());
+
+    let _ = (args.can_touch_efi_vars, args.dry_run);
 
     // purposefully don't support NIXOS_INSTALL_GRUB because it's legacy, and this tool isn't :)
     match env::var("NIXOS_INSTALL_BOOTLOADER") {
         Ok(var) if var == "1" => {
-            // installing bootloader
-            if Path::new("@efisys@/loader/loader.conf").exists() {
-                // remove it
+            if Path::new(&loader).exists() {
+                fs::remove_file(&loader)?;
             }
-            if args.can_touch_efi_vars {
-                // bootctl install --path=@efisys@
-            } else {
-                // bootctl install --no-variables --path=@efisys@
-            }
+
+            Command::new("bootctl")
+                .args(&[
+                    "install",
+                    &format!("--path={}", &esp.display()),
+                    if !args.can_touch_efi_vars {
+                        "--no-variables"
+                    } else {
+                        ""
+                    },
+                ])
+                .status()?;
         }
         _ => {
-            // updating bootloader (if necessary)
-            // get systemd version and installed bootloader version
-            // check /boot/EFI/systemd/systemd-bootx64.efi for "#### LoaderInfo: systemd-boot (\\d+) ####" string
-            // maybe use https://docs.rs/grep-searcher/0.1.8/grep_searcher/index.html to search the binary file or reimplement https://github.com/systemd/systemd/blob/32a2ee2bb4fa265577c883403748c909cd6784dd/src/boot/bootctl.c#L136
+            // TODO: just use regex and parse the output of `bootctl --path=@esp@ status` lol why did I even think this was a good idea
+            // regex: "^\\W+File:.*/EFI/(BOOT|systemd)/.*\\.efi \\(systemd-boot (\\d+)\\)$"
+            let bootloader_version = {
+                let f = File::open("/boot/EFI/systemd/systemd-bootx64.efi")?;
+                let matcher =
+                    RegexMatcher::new("#### LoaderInfo: systemd-boot (?P<version>\\d+) ####")?;
+                let mut version = 0;
+
+                Searcher::new().search_file(
+                    &matcher,
+                    &f,
+                    Bytes(|_, line| {
+                        // At this point, we are guaranteed to have a match: this closure is not
+                        // entered unless the `matcher` finds a match inside `f`. Thus, all of these
+                        // unwraps are safe.
+                        let found = matcher.find(line)?.unwrap();
+                        let found_line = &line[found];
+                        let mut captures = matcher.new_captures()?;
+                        matcher.captures(found_line, &mut captures)?;
+                        let idx = matcher.capture_index("version").unwrap();
+                        let version_capture = captures.get(idx).unwrap();
+
+                        version = std::str::from_utf8(&found_line[version_capture])
+                            .expect("version was invalid utf8")
+                            .parse::<usize>()
+                            .expect("version was not a number");
+
+                        Ok(true)
+                    }),
+                )?;
+
+                version
+            };
+
+            let systemd_version = {
+                let output = Command::new("bootctl")
+                    .arg("--version")
+                    .output()
+                    .expect("failed to execute bootctl")
+                    .stdout;
+                let matcher = RegexMatcher::new("systemd (?P<version>\\d+) \\(\\d+\\)")?;
+                let mut version = 0;
+
+                Searcher::new().search_slice(
+                    &matcher,
+                    &output,
+                    UTF8(|_, line| {
+                        // At this point, we are guaranteed to have a match: this closure is not
+                        // entered unless the `matcher` finds a match inside `output`. Thus, all of
+                        // these unwraps are safe.
+                        let found = matcher.find(line.as_bytes())?.unwrap();
+                        let found_line = &line[found];
+                        let mut captures = matcher.new_captures()?;
+                        matcher.captures(found_line.as_bytes(), &mut captures)?;
+                        let idx = matcher.capture_index("version").unwrap();
+                        let version_capture = captures.get(idx).unwrap();
+
+                        version = found_line[version_capture]
+                            .to_string()
+                            .parse::<usize>()
+                            .expect("version was not a number");
+
+                        Ok(true)
+                    }),
+                )?;
+
+                version
+            };
+
+            // TODO: compare versions and update if systemd is newer than bootloader
+            let _ = (bootloader_version, systemd_version);
+        }
+    }
+
+    // TODO: do we want to create the files here, and depend on the generator, or run the generator in a separate step?
+    // fs::create_dir_all(format!("{}/efi/nixos", systemd_boot::ROOT))?;
+    // fs::create_dir_all(format!("{}/loader/entries", systemd_boot::ROOT))?;
+
+    // for generation in get_all_generations() {
+    //     let (i, profile) = generator::parse_generation(&generation);
+    //     let generation_path = PathBuf::from(&generation);
+    //     let json = generator::get_json(generation_path);
+
+    //     for (path, contents) in systemd_boot::entry(&json, i, &profile)? {
+    //         let mut f = fs::File::create(path)?;
+    //         write!(f, "{}", contents.conf)?;
+
+    //         if !Path::new(&contents.kernel.1).exists() {
+    //             unix::fs::symlink(contents.kernel.0, contents.kernel.1)?;
+    //         }
+
+    //         if !Path::new(&contents.initrd.1).exists() {
+    //             unix::fs::symlink(contents.initrd.0, contents.initrd.1)?;
+    //         }
+    //     }
+    // }
+
+    util::copy_recursively(&args.generated_entries, &esp)?;
+
+    for (idx, generation) in all_generations(None) {
+        if fs::canonicalize(&generation)? == fs::canonicalize(&args.toplevel)? {
+            let tmp_loader = format!("{}/loader/loader.conf.tmp", esp.display());
+            let mut f = File::create(&tmp_loader)?;
+
+            if let Some(timeout) = args.timeout {
+                write!(f, "{}", timeout)?;
+            }
+            // if let Some(profile) = args.profile {
+            //     // TODO: support system profiles?
+            // } else {
+            write!(f, "default nixos-generation-{}.conf", idx)?;
+            // }
+            // if let Some(editor) = args.editor {
+            //     // TODO
+            // }
+            write!(f, "console-mode {}", args.console_mode)?;
+
+            fs::rename(tmp_loader, &loader)?;
         }
     }
 
     Ok(())
+}
+
+fn all_generations(profile: Option<String>) -> Vec<(usize, String)> {
+    let profile_path = if let Some(profile) = profile {
+        format!("/nix/var/nix/profiles/system-profiles/{}", profile)
+    } else {
+        String::from("/nix/var/nix/profiles/system")
+    };
+
+    let mut generations = Vec::new();
+    let output = String::from_utf8(
+        Command::new("nix-env")
+            .args(&["-p", &profile_path, "--list-generations"])
+            .output()
+            .expect("failed to execute nix-env")
+            .stdout,
+    )
+    .expect("found invalid UTF-8");
+
+    for line in output.lines() {
+        let generation = line
+            .trim()
+            .split(' ')
+            .next()
+            .expect("couldn't find generation number");
+
+        generations.push((
+            generation.parse().expect("generation number was invalid"),
+            format!("{}-{}-link", profile_path, generation),
+        ));
+    }
+
+    generations
 }

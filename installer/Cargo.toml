@@ -7,5 +7,9 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+# generator = { path = "../generator" }
+grep-matcher = "0.1.5"
+grep-regex = "0.1.9"
+grep-searcher = "0.1.8"
 pico-args = { version = "0.4.2", features = ["eq-separator"] }
 # askama = "0.10.5"
