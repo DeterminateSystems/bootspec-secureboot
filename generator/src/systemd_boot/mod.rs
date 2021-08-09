@@ -1,7 +1,7 @@
-use std::fs::{self, File};
-use std::io::Write;
-use std::os::unix::{self, fs::MetadataExt};
-use std::path::Path;
+use std::collections::HashMap;
+use std::fs;
+use std::os::unix::fs::MetadataExt;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use chrono::{Local, TimeZone};
@@ -9,9 +9,27 @@ use chrono::{Local, TimeZone};
 use crate::{BootJson, Result};
 
 // FIXME: placeholder dir
-const ROOT: &str = "systemd-boot-entries";
+pub const ROOT: &str = "systemd-boot-entries";
 
-pub(crate) fn entry(json: &BootJson, generation: usize, profile: &Option<String>) -> Result<()> {
+/// A mapping of file paths to file contents
+pub type Entries = HashMap<String, Contents>;
+
+#[derive(Default, Debug)]
+pub struct StorePath(PathBuf);
+#[derive(Default, Debug)]
+pub struct EspPath(String);
+
+#[derive(Default, Debug)]
+pub struct Contents {
+    /// The contents of the generation conf file.
+    pub conf: String,
+    /// A tuple of the kernel's store path and destination path (inside the ESP)
+    pub kernel: (PathBuf, String),
+    /// A tuple of the initrd's store path and destination path (inside the ESP)
+    pub initrd: (PathBuf, String),
+}
+
+pub fn entry(json: &BootJson, generation: usize, profile: &Option<String>) -> Result<Entries> {
     entry_impl(json, generation, profile, None)
 }
 
@@ -20,7 +38,7 @@ fn entry_impl(
     generation: usize,
     profile: &Option<String>,
     specialisation: Option<&str>,
-) -> Result<()> {
+) -> Result<Entries> {
     let machine_id = get_machine_id();
     let linux = format!(
         "/efi/nixos/{}.efi",
@@ -76,49 +94,45 @@ machine-id {machine_id}
     );
 
     let entries_dir = format!("{}/loader/entries", ROOT);
-    let nixos_dir = format!("{}/efi/nixos", ROOT);
-    fs::create_dir_all(&entries_dir)?;
-    fs::create_dir_all(&nixos_dir)?;
-
     let infix = if let Some(profile) = profile {
         format!("-{}", profile)
     } else {
         String::new()
     };
-
-    let mut f = if let Some(specialisation) = specialisation {
+    let conf_path = if let Some(specialisation) = specialisation {
         // TODO: the specialisation in filename is required (or it conflicts with other entries), does this mess up sorting?
-        File::create(format!(
+        format!(
             "{}/nixos{}-generation-{}-{}.conf",
             &entries_dir, infix, generation, specialisation
-        ))?
+        )
     } else {
-        File::create(format!(
+        format!(
             "{}/nixos{}-generation-{}.conf",
             &entries_dir, infix, generation
-        ))?
+        )
     };
 
-    write!(f, "{}", data)?;
-
     let kernel_dest = format!("{}/{}", ROOT, linux);
-    if !Path::new(&kernel_dest).exists() {
-        unix::fs::symlink(&json.kernel, kernel_dest)?;
-    }
-
     let initrd_dest = format!("{}/{}", ROOT, initrd);
-    if !Path::new(&initrd_dest).exists() {
-        unix::fs::symlink(&json.initrd, initrd_dest)?;
-    }
+
+    let mut entries = Entries::new();
+    entries.insert(
+        conf_path,
+        Contents {
+            conf: data,
+            kernel: (json.kernel.clone(), kernel_dest),
+            initrd: (json.initrd.clone(), initrd_dest),
+        },
+    );
 
     for (name, path) in &json.specialisation {
         let json = fs::read_to_string(&path.0)?;
         let parsed: BootJson = serde_json::from_str(&json)?;
 
-        entry_impl(&parsed, generation, profile, Some(&name.0))?;
+        entries.extend(entry_impl(&parsed, generation, profile, Some(&name.0))?);
     }
 
-    Ok(())
+    Ok(entries)
 }
 
 fn get_machine_id() -> String {

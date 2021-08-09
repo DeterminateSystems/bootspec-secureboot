@@ -3,7 +3,7 @@ use crate::{BootJson, Result};
 // FIXME: placeholder dir
 const ROOT: &str = "grub-entries";
 
-pub(crate) fn entry(json: &BootJson, generation: usize, profile: &Option<String>) -> Result<()> {
+pub fn entry(json: &BootJson, generation: usize, profile: &Option<String>) -> Result<()> {
     entry_impl(json, generation, profile, None)?;
 
     Ok(())
@@ -16,7 +16,7 @@ fn entry_impl(
     specialisation: Option<&str>,
 ) -> Result<()> {
     let _ = (json, generation, profile, specialisation);
-    // TODO: UUID can be retrieved from `lsblk -no UUID {device path}` or `findmnt -fn -o UUID /boot`
+    // TODO: UUID can be retrieved from `lsblk -no UUID {device path}` or `findmnt --first-only --noheadings --output UUID /boot`
     // TODO: support the xen stuff
 
     // schema: default entry has `- Default` in name and `--unrestricted`
@@ -25,7 +25,8 @@ fn entry_impl(
     // then submenu for all generations: "NixOS - Generation {i} ({date} - {version})" -- notably, no specialisations for prior generations?
     let data = format!(
         r#"menuentry "NixOS{}
-        "#, "asdf"
+        "#,
+        "asdf"
     );
 
     let _ = (data, ROOT);

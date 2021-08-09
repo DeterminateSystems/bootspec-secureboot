@@ -18,60 +18,13 @@
 
 // boot.loader.manual.enable = true; <- stubs out the `installBootloader` script to say "OK, update your bootloader now!\n  {path to bootspec.json}"
 
-use std::collections::HashMap;
 use std::env;
-use std::error::Error;
 use std::fs;
-use std::path::PathBuf;
+use std::io::Write;
+use std::os::unix;
+use std::path::{Path, PathBuf};
 
-use regex::Regex;
-use serde::{Deserialize, Serialize};
-
-mod grub;
-mod systemd_boot;
-
-#[derive(Debug, Default, Deserialize, Serialize, PartialEq, Eq, Hash)]
-struct SpecialisationName(String);
-#[derive(Debug, Default, Deserialize, Serialize)]
-struct SystemConfigurationRoot(PathBuf);
-#[derive(Debug, Default, Deserialize, Serialize)]
-struct BootJsonPath(PathBuf);
-
-#[derive(Debug, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BootJsonV1 {
-    /// The version of the boot.json schema
-    schema_version: usize,
-    /// NixOS version
-    system_version: String,
-    /// Path to kernel (bzImage) -- $toplevel/kernel
-    kernel: PathBuf,
-    /// Kernel version
-    kernel_version: String,
-    /// list of kernel parameters
-    kernel_params: Vec<String>,
-    /// Path to the init script
-    init: PathBuf,
-    /// Path to initrd -- $toplevel/initrd
-    initrd: PathBuf,
-    /// Path to "append-initrd-secrets" script -- $toplevel/append-initrd-secrets
-    initrd_secrets: PathBuf,
-    /// Mapping of specialisation names to their configuration's boot.json -- to add all specialisations as a boot entry
-    specialisation: HashMap<SpecialisationName, BootJsonPath>,
-    /// config.system.build.toplevel path
-    toplevel: SystemConfigurationRoot,
-}
-
-pub type BootJson = BootJsonV1;
-pub(crate) type Result<T, E = Box<dyn Error + Send + Sync + 'static>> = core::result::Result<T, E>;
-
-const SCHEMA_VERSION: usize = 1;
-const JSON_FILENAME: &str = "boot.v1.json";
-
-lazy_static::lazy_static! {
-    static ref SYSTEM_RE: Regex = Regex::new("/profiles/system-(?P<generation>\\d+)-link").unwrap();
-    static ref PROFILE_RE: Regex = Regex::new("/system-profiles/(?P<profile>[^-]+)-(?P<generation>\\d+)-link").unwrap();
-}
+use generator::{grub, systemd_boot};
 
 fn main() {
     env::set_var("RUST_BACKTRACE", "1");
@@ -86,86 +39,25 @@ fn main() {
             continue;
         }
 
-        let (i, profile) = if PROFILE_RE.is_match(&generation) {
-            let caps = PROFILE_RE.captures(&generation).unwrap();
-            let i = caps["generation"].parse::<usize>().unwrap();
-
-            (i, Some(caps["profile"].to_string()))
-        } else if SYSTEM_RE.is_match(&generation) {
-            let caps = SYSTEM_RE.captures(&generation).unwrap();
-            let i = caps["generation"].parse::<usize>().unwrap();
-
-            (i, None)
-        } else {
-            // TODO: for now, this is just for testing; could this be feasibly hit in real-world use?
-            // maybe check all generations of ever profile to see if their realpath matches?
-            (0, None)
-        };
-
+        let (i, profile) = generator::parse_generation(&generation);
         let generation_path = PathBuf::from(&generation);
-        let json_path = generation_path.join(JSON_FILENAME);
+        let json = generator::get_json(generation_path);
 
-        let json: BootJson = if json_path.exists() {
-            let contents = fs::read_to_string(&json_path).unwrap();
-            serde_json::from_str(&contents).unwrap()
-        } else {
-            synthesize_schema_from_generation(generation_path).unwrap()
-        };
+        for (path, contents) in systemd_boot::entry(&json, i, &profile).unwrap() {
+            fs::create_dir_all(format!("{}/efi/nixos", systemd_boot::ROOT)).unwrap();
+            fs::create_dir_all(format!("{}/loader/entries", systemd_boot::ROOT)).unwrap();
+            let mut f = fs::File::create(path).unwrap();
+            write!(f, "{}", contents.conf).unwrap();
 
-        systemd_boot::entry(&json, i, &profile).unwrap();
+            if !Path::new(&contents.kernel.1).exists() {
+                unix::fs::symlink(contents.kernel.0, contents.kernel.1).unwrap();
+            }
+
+            if !Path::new(&contents.initrd.1).exists() {
+                unix::fs::symlink(contents.initrd.0, contents.initrd.1).unwrap();
+            }
+        }
+
         grub::entry(&json, i, &profile).unwrap();
     }
-}
-
-fn synthesize_schema_from_generation(generation: PathBuf) -> Result<BootJson> {
-    let generation = generation.canonicalize()?;
-
-    let system_version = fs::read_to_string(generation.join("nixos-version"))?;
-
-    let kernel = fs::canonicalize(generation.join("kernel-modules/bzImage"))?;
-
-    let kernel_modules = fs::canonicalize(generation.join("kernel-modules/lib/modules"))?;
-    let kernel_glob = fs::read_dir(kernel_modules)?
-        .map(|res| res.map(|e| e.path()))
-        .next()
-        .unwrap()?;
-    let kernel_version = kernel_glob.file_name().unwrap().to_str().unwrap();
-
-    let kernel_params: Vec<String> = fs::read_to_string(generation.join("kernel-params"))?
-        .split(' ')
-        .map(|e| e.to_string())
-        .collect();
-
-    let init = generation.join("init");
-
-    let initrd = fs::canonicalize(generation.join("initrd"))?;
-
-    let initrd_secrets = generation.join("append-initrd-secrets");
-
-    let mut specialisation: HashMap<SpecialisationName, BootJsonPath> = HashMap::new();
-    for spec in fs::read_dir(generation.join("specialisation"))?.map(|res| res.map(|e| e.path())) {
-        let spec = spec?;
-        let name = spec.file_name().unwrap().to_str().unwrap();
-        let boot_json = fs::canonicalize(
-            generation.join(format!("specialisation/{}/{}", name, JSON_FILENAME)),
-        )?;
-
-        specialisation.insert(
-            SpecialisationName(name.to_string()),
-            BootJsonPath(boot_json),
-        );
-    }
-
-    Ok(BootJson {
-        schema_version: SCHEMA_VERSION,
-        system_version,
-        kernel,
-        kernel_version: kernel_version.to_string(),
-        kernel_params,
-        init,
-        initrd,
-        initrd_secrets,
-        toplevel: SystemConfigurationRoot(generation),
-        specialisation,
-    })
 }

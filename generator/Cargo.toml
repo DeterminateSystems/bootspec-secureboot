@@ -4,6 +4,14 @@ version = "0.1.0"
 authors = ["Cole Helbling <cole.helbling@determinate.systems>"]
 edition = "2018"
 
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "generator"
+path = "src/main.rs"
+doctest = false
+
 [dependencies]
 chrono = "0.4.19"
 lazy_static = "1.4.0"
