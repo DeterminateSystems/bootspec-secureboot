@@ -63,7 +63,7 @@ fn parse_args() -> Result<Args> {
 
     let args = Args {
         toplevel: pico.value_from_fn("--toplevel", parse_path)?,
-        dry_run: pico.value_from_str("--dry-run").unwrap_or_default(),
+        dry_run: pico.contains("--dry-run"),
         generated_entries: pico.value_from_fn("--generated-entries", parse_path)?,
         timeout: pico.opt_value_from_str("--timeout")?,
         console_mode: pico
