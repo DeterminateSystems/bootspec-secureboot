@@ -29,13 +29,15 @@ struct Args {
     esp: Option<PathBuf>,
     /// Whether or not to touch EFI vars in the NVRAM
     can_touch_efi_vars: bool,
-    // TODO: bootctl path
+    /// TODO: bootctl path
+    bootctl: Option<PathBuf>,
 }
 
 pub(crate) type Result<T, E = Box<dyn Error + Send + Sync + 'static>> = core::result::Result<T, E>;
 
 // TODO: check for root permissions -- required
 fn main() {
+    std::env::set_var("RUST_BACKTRACE", "1");
     // installer
     //   --toplevel=...
     //   --esp=...
@@ -46,12 +48,12 @@ fn main() {
 
     // TODO: choose which bootloader to install to somehow
     // (for now, hardcoded to systemd_boot for dogfood purposes)
-    systemd_boot::install(args).unwrap();
+    systemd_boot::install(args).expect("failed to install");
 }
 
 fn parse_args() -> Result<Args> {
     let mut pico = pico_args::Arguments::from_env();
-    // TODO: pico subcommand
+    // TODO: pico subcommand per supported bootloader
 
     if pico.contains(["-h", "--help"]) {
         // TODO: help
@@ -67,11 +69,13 @@ fn parse_args() -> Result<Args> {
         console_mode: pico
             .value_from_str("--console-mode")
             .unwrap_or_else(|_| String::from("keep")),
+
         // EFI-specific
         esp: pico.opt_value_from_fn("--esp", parse_path)?,
         can_touch_efi_vars: pico
             .opt_value_from_str("--touch-efi-vars")?
             .unwrap_or_default(),
+        bootctl: pico.opt_value_from_fn("--bootctl", parse_path)?,
     };
 
     dbg!(&args);
