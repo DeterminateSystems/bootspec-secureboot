@@ -23,6 +23,8 @@ struct Args {
     timeout: Option<usize>,
     /// TODO
     console_mode: String,
+    /// TODO
+    configuration_limit: usize,
 
     // EFI-specific arguments
     /// The path to the EFI System Partition
@@ -69,12 +71,11 @@ fn parse_args() -> Result<Args> {
         console_mode: pico
             .value_from_str("--console-mode")
             .unwrap_or_else(|_| String::from("keep")),
+        configuration_limit: pico.value_from_str("--configuration-limit")?,
 
         // EFI-specific
         esp: pico.opt_value_from_fn("--esp", parse_path)?,
-        can_touch_efi_vars: pico
-            .opt_value_from_str("--touch-efi-vars")?
-            .unwrap_or_default(),
+        can_touch_efi_vars: pico.contains("--touch-efi-vars"),
         bootctl: pico.opt_value_from_fn("--bootctl", parse_path)?,
     };
 
