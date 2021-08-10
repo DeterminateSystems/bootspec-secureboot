@@ -27,20 +27,25 @@ where
     Ok(())
 }
 
-/// Copies `source` to `dest` recursively.
-pub fn copy_recursively<P, Q>(source: P, dest: Q) -> Result<()>
-where
-    P: AsRef<Path>,
-    Q: AsRef<Path>,
-{
-    self::copy_impl(&source, &dest, None)
-}
+/// Copies `source` to `dest` recursively, and then atomically moves them to the proper location.
+pub fn atomic_recursive_copy(source: &Path, dest: &Path) -> Result<()> {
+    let tmp_dest = dest.join("tmp");
 
-// TODO: copy to tmp location, then rename?
+    if Path::new(&tmp_dest).exists() {
+        fs::remove_dir_all(&tmp_dest)?;
+    }
+
+    self::copy_impl(&source, &tmp_dest, None, false)?;
+    self::copy_impl(&tmp_dest, &dest, None, true)?;
+    fs::remove_dir_all(&tmp_dest)?;
+
+    Ok(())
+}
 
 // https://github.com/mdunsmuir/copy_dir/blob/071bab19cd716825375e70644c080c36a58863a1/src/lib.rs#L118
 // Original work Copyright (c) 2016 Michael Dunsmuir
-// Modified work Copyright (c) 2019, 2021 Cole Helbling
+// Modified work Copyright (c) 2019 Cole Helbling
+// Modified work Copyright (c) 2021 Determinate Systems, Inc.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -59,7 +64,7 @@ where
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
-fn copy_impl<P, Q>(source: &P, dest: &Q, mut root: Option<(u64, u64)>) -> Result<()>
+fn copy_impl<P, Q>(source: &P, dest: &Q, mut root: Option<(u64, u64)>, rename: bool) -> Result<()>
 where
     P: AsRef<Path>,
     Q: AsRef<Path>,
@@ -79,7 +84,11 @@ where
             self::create_dirs_to_file(&dest)?;
         }
 
-        fs::copy(source, dest)?;
+        if rename {
+            fs::rename(source, dest)?;
+        } else {
+            fs::copy(source, dest)?;
+        }
     } else if meta.is_dir() {
         if let Some(root) = root {
             if root == id {
@@ -98,7 +107,7 @@ where
             let name = entry
                 .file_name()
                 .ok_or("Entry did not contain valid filename")?;
-            self::copy_impl(&entry, &dest.join(name), root)?;
+            self::copy_impl(&entry, &dest.join(name), root, rename)?;
         }
 
         fs::set_permissions(dest, meta.permissions())?;

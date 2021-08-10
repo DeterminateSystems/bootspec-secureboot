@@ -134,32 +134,11 @@ pub(crate) fn install(args: Args) -> Result<()> {
         }
     }
 
-    // TODO: do we want to create the files here, and depend on the generator, or run the generator in a separate step?
-    // fs::create_dir_all(format!("{}/efi/nixos", systemd_boot::ROOT))?;
-    // fs::create_dir_all(format!("{}/loader/entries", systemd_boot::ROOT))?;
+    // TODO: remove old entries?
+    // TODO: verify there's enough space on the device
+    util::atomic_recursive_copy(&args.generated_entries, &esp)?;
 
-    // for generation in get_all_generations() {
-    //     let (i, profile) = generator::parse_generation(&generation);
-    //     let generation_path = PathBuf::from(&generation);
-    //     let json = generator::get_json(generation_path);
-
-    //     for (path, contents) in systemd_boot::entry(&json, i, &profile)? {
-    //         let mut f = fs::File::create(path)?;
-    //         write!(f, "{}", contents.conf)?;
-
-    //         if !Path::new(&contents.kernel.1).exists() {
-    //             unix::fs::symlink(contents.kernel.0, contents.kernel.1)?;
-    //         }
-
-    //         if !Path::new(&contents.initrd.1).exists() {
-    //             unix::fs::symlink(contents.initrd.0, contents.initrd.1)?;
-    //         }
-    //     }
-    // }
-
-    util::copy_recursively(&args.generated_entries, &esp)?;
-
-    for (idx, generation) in all_generations(None) {
+    for (idx, generation) in all_generations(None)? {
         if fs::canonicalize(&generation)? == fs::canonicalize(&args.toplevel)? {
             let tmp_loader = format!("{}/loader/loader.conf.tmp", esp.display());
             let mut f = File::create(&tmp_loader)?;
@@ -213,11 +192,9 @@ fn all_generations(profile: Option<String>) -> Result<Vec<(usize, String)>> {
     let output = String::from_utf8(
         Command::new("nix-env")
             .args(&["-p", &profile_path, "--list-generations"])
-            .output()
-            .expect("failed to execute nix-env")
+            .output()?
             .stdout,
-    )
-    .expect("found invalid UTF-8");
+    )?;
 
     let mut generations = Vec::new();
     for line in output.lines() {
@@ -228,7 +205,7 @@ fn all_generations(profile: Option<String>) -> Result<Vec<(usize, String)>> {
             .expect("couldn't find generation number");
 
         generations.push((
-            generation.parse().expect("generation number was invalid"),
+            generation.parse()?,
             format!("{}-{}-link", profile_path, generation),
         ));
     }
