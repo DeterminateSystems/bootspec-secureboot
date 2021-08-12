@@ -33,23 +33,29 @@
 */
 
 use std::env;
-use std::ffi::CStr;
+use std::ffi::{CStr, OsString};
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::os::unix::io::AsRawFd;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::str;
 
 use regex::{Regex, RegexBuilder};
 
-use crate::{util, Args, Result};
+use crate::util::{self, Generation};
+use crate::{Args, Result};
+
+lazy_static::lazy_static! {
+    static ref ENTRY_RE: Regex = Regex::new("nixos-(?:(?P<profile>[^-]+)-)?generation-(?P<generation>\\d+).conf").unwrap();
+}
 
 pub(crate) fn install(args: Args) -> Result<()> {
     // systemd_boot requires the path to the ESP be provided, so it's safe to unwrap (until I make
     // this a subcommand and remove the Option wrapper altogether)
     let esp = args.esp.unwrap();
     let bootctl = args.bootctl.unwrap();
-    let loader = format!("{}/loader/loader.conf", esp.display());
+    let loader = esp.join("loader/loader.conf");
 
     // FIXME: support dry run
     if args.dry_run {
@@ -59,7 +65,7 @@ pub(crate) fn install(args: Args) -> Result<()> {
     // purposefully don't support NIXOS_INSTALL_GRUB because it's legacy, and this tool isn't :)
     match env::var("NIXOS_INSTALL_BOOTLOADER") {
         Ok(var) if var == "1" => {
-            if Path::new(&loader).exists() {
+            if loader.exists() {
                 fs::remove_file(&loader)?;
             }
 
@@ -81,7 +87,7 @@ pub(crate) fn install(args: Args) -> Result<()> {
                     .args(&[&format!("--path={}", &esp.display()), "status"])
                     .output()?
                     .stdout;
-                let output = std::str::from_utf8(&output)?;
+                let output = str::from_utf8(&output)?;
 
                 // pat in its own str so that `cargo fmt` doesn't choke...
                 let pat = "^\\W+File:.*/EFI/(BOOT|systemd)/.*\\.efi \\(systemd-boot (?P<version>\\d+)\\)$";
@@ -104,12 +110,15 @@ pub(crate) fn install(args: Args) -> Result<()> {
 
             let systemd_version = {
                 let output = Command::new(&bootctl).arg("--version").output()?.stdout;
-                let output = std::str::from_utf8(&output)?;
+                let output = str::from_utf8(&output)?;
 
                 let re = Regex::new("systemd (?P<version>\\d+) \\(\\d+\\)")?;
                 let caps = re.captures(output).expect("");
 
-                caps.name("version").unwrap().as_str().parse::<usize>()?
+                caps.name("version")
+                    .expect("couldn't find version")
+                    .as_str()
+                    .parse::<usize>()?
             };
 
             if let Some(bootloader_version) = bootloader_version {
@@ -134,14 +143,28 @@ pub(crate) fn install(args: Args) -> Result<()> {
         }
     }
 
-    // TODO: remove old entries?
-    // TODO: verify there's enough space on the device
-    util::atomic_recursive_copy(&args.generated_entries, &esp)?;
+    let generations = {
+        let generations = util::all_generations(None)?;
+        let generations_len = generations.len();
 
-    for (idx, generation) in all_generations(None)? {
-        if fs::canonicalize(&generation)? == fs::canonicalize(&args.toplevel)? {
-            let tmp_loader = format!("{}/loader/loader.conf.tmp", esp.display());
-            let mut f = File::create(&tmp_loader)?;
+        generations
+            .into_iter()
+            .skip(generations_len.saturating_sub(args.configuration_limit))
+            .collect::<Vec<_>>()
+    };
+
+    // Remove old things from both the generated entries and ESP
+    // - Generated entries because we don't need to waste space on copying unused kernels / initrds / entries
+    // - ESP so that we don't have unbootable entries
+    self::remove_old_entries(&generations, &args.generated_entries)?;
+    self::remove_old_entries(&generations, &esp)?;
+
+    // Reverse the iterator because it's more likely that the generation being switched to is
+    // "newer", thus will be at the end of the generated list of generations
+    for generation in generations.iter().rev() {
+        if fs::canonicalize(&generation.path)? == fs::canonicalize(&args.toplevel)? {
+            let gen_loader = args.generated_entries.join("loader/loader.conf");
+            let mut f = File::create(&gen_loader)?;
 
             if let Some(timeout) = args.timeout {
                 writeln!(f, "timeout {}", timeout)?;
@@ -149,26 +172,28 @@ pub(crate) fn install(args: Args) -> Result<()> {
             // if let Some(profile) = args.profile {
             //     // TODO: support system profiles?
             // } else {
-            writeln!(f, "default nixos-generation-{}.conf", idx)?;
+            writeln!(f, "default nixos-generation-{}.conf", generation.idx)?;
             // }
-            // if let Some(editor) = args.editor {
-            //     // TODO
-            // }
+            if !args.editor {
+                writeln!(f, "editor 0")?;
+            }
             writeln!(f, "console-mode {}", args.console_mode)?;
-
-            fs::rename(tmp_loader, &loader)?;
 
             break;
         }
     }
 
+    // If there's not enough space for everything, this will error out while copying files, before
+    // anything is overwritten via renaming.
+    util::atomic_tmp_copy(&args.generated_entries, &esp)?;
+
+    let f = File::open(&esp)?;
+    let fd = f.as_raw_fd();
+
     // TODO
     // SAFETY: idk
     unsafe {
-        let f = File::open(&esp)?;
-        let fd = f.as_raw_fd();
         let ret = libc::syncfs(fd);
-
         if ret != 0 {
             writeln!(
                 io::stderr(),
@@ -182,33 +207,64 @@ pub(crate) fn install(args: Args) -> Result<()> {
     Ok(())
 }
 
-fn all_generations(profile: Option<String>) -> Result<Vec<(usize, String)>> {
-    let profile_path = if let Some(profile) = profile {
-        format!("/nix/var/nix/profiles/system-profiles/{}", profile)
-    } else {
-        String::from("/nix/var/nix/profiles/system")
-    };
+// TODO: split into different binary / subcommand?
+fn remove_old_entries(generations: &[Generation], esp: &Path) -> Result<()> {
+    let mut known_paths: Vec<PathBuf> = Vec::new();
 
-    let output = String::from_utf8(
-        Command::new("nix-env")
-            .args(&["-p", &profile_path, "--list-generations"])
-            .output()?
-            .stdout,
-    )?;
-
-    let mut generations = Vec::new();
-    for line in output.lines() {
-        let generation = line
-            .trim()
-            .split(' ')
-            .next()
-            .expect("couldn't find generation number");
-
-        generations.push((
-            generation.parse()?,
-            format!("{}-{}-link", profile_path, generation),
-        ));
+    for generation in generations {
+        let path = &generation.path;
+        known_paths.push(fs::canonicalize(path.join("kernel"))?);
+        known_paths.push(fs::canonicalize(path.join("initrd"))?);
     }
 
-    Ok(generations)
+    let known_files = known_paths
+        .iter()
+        .map(|e| {
+            let mut s = e
+                .to_string_lossy()
+                .replace("/nix/store/", "")
+                .replace("/", "-");
+            s.push_str(".efi");
+            s.into()
+        })
+        .collect::<Vec<OsString>>();
+
+    for entry in fs::read_dir(esp.join("loader/entries"))? {
+        let f = entry?.path();
+        let name = f
+            .file_name()
+            .expect("filename terminated in ..")
+            .to_string_lossy();
+
+        // Don't want to delete user's custom boot entries
+        if !ENTRY_RE.is_match(&name) {
+            continue;
+        }
+
+        if !generations.iter().any(|e| {
+            let caps = ENTRY_RE.captures(&name).unwrap();
+            let profile = caps.name("profile").map(|e| e.as_str());
+            let idx = caps
+                .name("generation")
+                .expect("couldn't find generation")
+                .as_str()
+                .parse::<usize>()
+                .expect("couldn't parse generation into number");
+
+            e.idx == idx && e.profile.as_deref() == profile
+        }) {
+            fs::remove_file(f)?;
+        }
+    }
+
+    for entry in fs::read_dir(esp.join("efi/nixos"))? {
+        let f = entry?.path();
+        let name = f.file_name().expect("filename terminated in ..");
+
+        if !known_files.iter().any(|e| e == name) {
+            fs::remove_file(f)?;
+        }
+    }
+
+    Ok(())
 }

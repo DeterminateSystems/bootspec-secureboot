@@ -10,7 +10,7 @@ mod grub;
 mod systemd_boot;
 mod util;
 
-// TODO: separate by EFI and BIOS? or by bootloader using a subcommand?
+// TODO: separate by bootloader using a subcommand?
 #[derive(Default, Debug)]
 struct Args {
     /// The path to the default configuration's toplevel.
@@ -25,6 +25,8 @@ struct Args {
     console_mode: String,
     /// TODO
     configuration_limit: usize,
+    /// TODO
+    editor: bool,
 
     // EFI-specific arguments
     /// The path to the EFI System Partition
@@ -37,20 +39,17 @@ struct Args {
 
 pub(crate) type Result<T, E = Box<dyn Error + Send + Sync + 'static>> = core::result::Result<T, E>;
 
-// TODO: check for root permissions -- required
-fn main() {
+fn main() -> Result<()> {
     std::env::set_var("RUST_BACKTRACE", "1");
-    // installer
-    //   --toplevel=...
-    //   --esp=...
-    //   --touch-efi-vars=...
-    //   --dry-run=...
-    //   --generated-entries=... <- path to generator's output dir
-    let args = parse_args().unwrap();
+
+    let args = self::parse_args().unwrap();
 
     // TODO: choose which bootloader to install to somehow
     // (for now, hardcoded to systemd_boot for dogfood purposes)
-    systemd_boot::install(args).expect("failed to install");
+    // TODO: better error handling (eyre? something with backtraces, preferably...)
+    systemd_boot::install(args).unwrap();
+
+    Ok(())
 }
 
 fn parse_args() -> Result<Args> {
@@ -64,19 +63,18 @@ fn parse_args() -> Result<Args> {
     }
 
     let args = Args {
-        toplevel: pico.value_from_fn("--toplevel", parse_path)?,
+        toplevel: pico.value_from_fn("--toplevel", self::parse_path)?,
         dry_run: pico.contains("--dry-run"),
-        generated_entries: pico.value_from_fn("--generated-entries", parse_path)?,
+        generated_entries: pico.value_from_fn("--generated-entries", self::parse_path)?,
         timeout: pico.opt_value_from_str("--timeout")?,
-        console_mode: pico
-            .value_from_str("--console-mode")
-            .unwrap_or_else(|_| String::from("keep")),
+        console_mode: pico.value_from_str("--console-mode")?,
         configuration_limit: pico.value_from_str("--configuration-limit")?,
+        editor: pico.opt_value_from_str("--editor")?.unwrap_or(true),
 
         // EFI-specific
-        esp: pico.opt_value_from_fn("--esp", parse_path)?,
+        esp: pico.opt_value_from_fn("--esp", self::parse_path)?,
         can_touch_efi_vars: pico.contains("--touch-efi-vars"),
-        bootctl: pico.opt_value_from_fn("--bootctl", parse_path)?,
+        bootctl: pico.opt_value_from_fn("--bootctl", self::parse_path)?,
     };
 
     dbg!(&args);
