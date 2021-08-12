@@ -16,12 +16,16 @@ pub struct Generation {
 
 pub fn all_generations(profile: Option<String>) -> Result<Vec<Generation>> {
     let profile_path = profile_path(&profile);
-    let output = String::from_utf8(
-        Command::new("nix-env")
-            .args(&["-p", &profile_path, "--list-generations"])
-            .output()?
-            .stdout,
-    )?;
+    // TODO: nix-env could be provided as a flag?
+    let cmd = Command::new("nix-env")
+        .args(&["-p", &profile_path, "--list-generations"])
+        .output()?;
+
+    if cmd.stdout.is_empty() {
+        return Err("couldn't list generations; are you root?".into());
+    }
+
+    let output = String::from_utf8(cmd.stdout)?;
     let mut generations = Vec::new();
 
     for line in output.lines() {
