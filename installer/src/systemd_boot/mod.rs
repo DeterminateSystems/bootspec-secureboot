@@ -209,6 +209,10 @@ pub(crate) fn install(args: Args) -> Result<()> {
 
 // TODO: split into different binary / subcommand?
 fn remove_old_entries(generations: &[Generation], esp: &Path) -> Result<()> {
+    if !esp.exists() {
+        return Ok(());
+    }
+
     let mut known_paths: Vec<PathBuf> = Vec::new();
 
     for generation in generations {
