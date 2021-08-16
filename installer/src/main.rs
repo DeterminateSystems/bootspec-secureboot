@@ -32,6 +32,8 @@ struct Args {
     editor: bool,
     /// TODO
     verbosity: usize,
+    /// TODO
+    install: bool,
 
     // EFI-specific arguments
     /// The path to the EFI System Partition
@@ -94,6 +96,7 @@ fn parse_args() -> Result<Args> {
         configuration_limit: pico.opt_value_from_str("--configuration-limit")?,
         editor: pico.opt_value_from_str("--editor")?.unwrap_or(true),
         verbosity,
+        install: pico.contains("--install"),
 
         // EFI-specific
         esp: pico.opt_value_from_fn("--esp", self::parse_path)?,

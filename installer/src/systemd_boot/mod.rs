@@ -32,7 +32,6 @@
 8. syncfs to make sure a crash/outage doesn't make the system unbootable
 */
 
-use std::env;
 use std::ffi::{CStr, OsString};
 use std::fs::{self, File};
 use std::io::Write;
@@ -67,91 +66,88 @@ pub(crate) fn install(args: Args) -> Result<()> {
         unimplemented!("dry run still needs to be implemented");
     }
 
-    // purposefully don't support NIXOS_INSTALL_GRUB because it's legacy, and this tool isn't :)
-    match env::var("NIXOS_INSTALL_BOOTLOADER") {
-        Ok(var) if var == "1" => {
-            trace!("installing bootloader");
+    if args.install {
+        trace!("installing bootloader");
 
-            if loader.exists() {
-                debug!("removing existing loader.conf");
-                fs::remove_file(&loader)?;
-            }
-
-            debug!("running `bootctl install`");
-            Command::new(&bootctl)
-                .args(&[
-                    "install",
-                    &format!("--path={}", &esp.display()),
-                    if !args.can_touch_efi_vars {
-                        "--no-variables"
-                    } else {
-                        ""
-                    },
-                ])
-                .status()?;
+        if loader.exists() {
+            debug!("removing existing loader.conf");
+            fs::remove_file(&loader)?;
         }
-        _ => {
-            trace!("updating bootloader");
 
-            let bootloader_version = {
-                trace!("checking bootloader version");
-
-                debug!("running `bootctl status`");
-                let output = Command::new(&bootctl)
-                    .args(&[&format!("--path={}", &esp.display()), "status"])
-                    .output()?
-                    .stdout;
-                let output = str::from_utf8(&output)?;
-
-                // pat in its own str so that `cargo fmt` doesn't choke...
-                let pat = "^\\W+File:.*/EFI/(BOOT|systemd)/.*\\.efi \\(systemd-boot (?P<version>\\d+)\\)$";
-
-                // See enumerate_binaries() in systemd bootctl.c for code which generates this:
-                // https://github.com/systemd/systemd/blob/788733428d019791ab9d780b4778a472794b3748/src/boot/bootctl.c#L221-L224
-                let re = RegexBuilder::new(pat)
-                    .multi_line(true)
-                    .case_insensitive(true)
-                    .build()?;
-                let caps = re.captures(output);
-
-                if let Some(caps) = caps {
-                    caps.name("version")
-                        .and_then(|cap| cap.as_str().parse::<usize>().ok())
+        debug!("running `bootctl install`");
+        Command::new(&bootctl)
+            .args(&[
+                "install",
+                &format!("--path={}", &esp.display()),
+                if !args.can_touch_efi_vars {
+                    "--no-variables"
                 } else {
-                    None
-                }
-            };
+                    ""
+                },
+            ])
+            .status()?;
+    } else {
+        trace!("updating bootloader");
 
-            let systemd_version = {
-                trace!("checking systemd version");
+        let bootloader_version = {
+            trace!("checking bootloader version");
 
-                debug!("running `bootctl --version`");
-                let output = Command::new(&bootctl).arg("--version").output()?.stdout;
-                let output = str::from_utf8(&output)?;
+            debug!("running `bootctl status`");
+            let output = Command::new(&bootctl)
+                .args(&[&format!("--path={}", &esp.display()), "status"])
+                .output()?
+                .stdout;
+            let output = str::from_utf8(&output)?;
 
-                let re = Regex::new("systemd (?P<version>\\d+) \\(\\d+\\)")?;
-                let caps = re.captures(output).expect("");
+            // pat in its own str so that `cargo fmt` doesn't choke...
+            let pat =
+                "^\\W+File:.*/EFI/(BOOT|systemd)/.*\\.efi \\(systemd-boot (?P<version>\\d+)\\)$";
 
+            // See enumerate_binaries() in systemd bootctl.c for code which generates this:
+            // https://github.com/systemd/systemd/blob/788733428d019791ab9d780b4778a472794b3748/src/boot/bootctl.c#L221-L224
+            let re = RegexBuilder::new(pat)
+                .multi_line(true)
+                .case_insensitive(true)
+                .build()?;
+            let caps = re.captures(output);
+
+            if let Some(caps) = caps {
                 caps.name("version")
-                    .expect("couldn't find version")
-                    .as_str()
-                    .parse::<usize>()?
-            };
-
-            if let Some(bootloader_version) = bootloader_version {
-                if systemd_version > bootloader_version {
-                    info!(
-                        "updating systemd-boot from {} to {}",
-                        bootloader_version, systemd_version
-                    );
-
-                    Command::new(&bootctl)
-                        .args(&[&format!("--path={}", &esp.display()), "update"])
-                        .status()?;
-                }
+                    .and_then(|cap| cap.as_str().parse::<usize>().ok())
             } else {
-                warn!("could not find any previously installed systemd-boot");
+                None
             }
+        };
+
+        let systemd_version = {
+            trace!("checking systemd version");
+
+            debug!("running `bootctl --version`");
+            let output = Command::new(&bootctl).arg("--version").output()?.stdout;
+            let output = str::from_utf8(&output)?;
+
+            let re = Regex::new("systemd (?P<version>\\d+) \\(\\d+\\)")?;
+            let caps = re.captures(output).expect("");
+
+            caps.name("version")
+                .expect("couldn't find version")
+                .as_str()
+                .parse::<usize>()?
+        };
+
+        if let Some(bootloader_version) = bootloader_version {
+            if systemd_version > bootloader_version {
+                info!(
+                    "updating systemd-boot from {} to {}",
+                    bootloader_version, systemd_version
+                );
+
+                Command::new(&bootctl)
+                    .args(&[&format!("--path={}", &esp.display()), "update"])
+                    .status()?;
+            }
+        } else {
+            warn!("could not find any previously installed systemd-boot");
         }
     }
 
