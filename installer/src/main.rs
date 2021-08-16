@@ -4,7 +4,10 @@
 // TODO: maybe make the installer use the generator directly? e.g. don't write to files, write to a HashMap<String, String>, which maps the file path to its contents
 
 use std::error::Error;
+use std::io::Write;
 use std::path::PathBuf;
+
+use log::LevelFilter;
 
 mod grub;
 mod systemd_boot;
@@ -27,6 +30,8 @@ struct Args {
     configuration_limit: Option<usize>,
     /// TODO
     editor: bool,
+    /// TODO
+    verbosity: usize,
 
     // EFI-specific arguments
     /// The path to the EFI System Partition
@@ -43,6 +48,19 @@ fn main() -> Result<()> {
     std::env::set_var("RUST_BACKTRACE", "1");
 
     let args = self::parse_args().unwrap();
+
+    env_logger::Builder::new()
+        .format(|buf, record| writeln!(buf, "{:<5} {}", record.level(), record.args()))
+        .filter(
+            Some(env!("CARGO_PKG_NAME")), // only log for this
+            match args.verbosity {
+                0 => LevelFilter::Warn,
+                1 => LevelFilter::Info,
+                2 => LevelFilter::Debug,
+                _ => LevelFilter::Trace,
+            },
+        )
+        .try_init()?;
 
     // TODO: choose which bootloader to install to somehow
     // (for now, hardcoded to systemd_boot for dogfood purposes)
@@ -62,6 +80,11 @@ fn parse_args() -> Result<Args> {
         std::process::exit(0);
     }
 
+    let mut verbosity = 0;
+    while pico.contains(["-v", "--verbose"]) {
+        verbosity += 1;
+    }
+
     let args = Args {
         toplevel: pico.value_from_fn("--toplevel", self::parse_path)?,
         dry_run: pico.contains("--dry-run"),
@@ -70,6 +93,7 @@ fn parse_args() -> Result<Args> {
         console_mode: pico.value_from_str("--console-mode")?,
         configuration_limit: pico.opt_value_from_str("--configuration-limit")?,
         editor: pico.opt_value_from_str("--editor")?.unwrap_or(true),
+        verbosity,
 
         // EFI-specific
         esp: pico.opt_value_from_fn("--esp", self::parse_path)?,
