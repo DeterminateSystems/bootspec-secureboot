@@ -145,12 +145,17 @@ pub(crate) fn install(args: Args) -> Result<()> {
 
     let generations = {
         let generations = util::all_generations(None)?;
-        let generations_len = generations.len();
 
-        generations
-            .into_iter()
-            .skip(generations_len.saturating_sub(args.configuration_limit))
-            .collect::<Vec<_>>()
+        if let Some(limit) = args.configuration_limit {
+            let generations_len = generations.len();
+
+            generations
+                .into_iter()
+                .skip(generations_len.saturating_sub(limit))
+                .collect::<Vec<_>>()
+        } else {
+            generations
+        }
     };
 
     // Remove old things from both the generated entries and ESP
@@ -163,6 +168,9 @@ pub(crate) fn install(args: Args) -> Result<()> {
     // "newer", thus will be at the end of the generated list of generations
     for generation in generations.iter().rev() {
         if fs::canonicalize(&generation.path)? == fs::canonicalize(&args.toplevel)? {
+            // We don't need to check if loader.conf already exists because we are writing it
+            // directly to the `generated_entries` directory (where there cannot be one unless
+            // manually placed)
             let gen_loader = args.generated_entries.join("loader/loader.conf");
             let mut f = File::create(&gen_loader)?;
 
