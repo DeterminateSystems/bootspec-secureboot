@@ -35,12 +35,13 @@
 use std::env;
 use std::ffi::{CStr, OsString};
 use std::fs::{self, File};
-use std::io::{self, Write};
+use std::io::Write;
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str;
 
+use log::{debug, error, info, trace, warn};
 use regex::{Regex, RegexBuilder};
 
 use crate::util::{self, Generation};
@@ -51,6 +52,8 @@ lazy_static::lazy_static! {
 }
 
 pub(crate) fn install(args: Args) -> Result<()> {
+    trace!("beginning systemd_boot install process");
+
     // systemd_boot requires the path to the ESP be provided, so it's safe to unwrap (until I make
     // this a subcommand and remove the Option wrapper altogether)
     let esp = args.esp.unwrap();
@@ -58,6 +61,8 @@ pub(crate) fn install(args: Args) -> Result<()> {
     let loader = esp.join("loader/loader.conf");
 
     // FIXME: support dry run
+    // TODO: make a function (macro_rules! macro?) that accepts the potentially-destructive action and a message to log?
+    debug!("dry_run? {}", args.dry_run);
     if args.dry_run {
         unimplemented!("dry run still needs to be implemented");
     }
@@ -65,10 +70,14 @@ pub(crate) fn install(args: Args) -> Result<()> {
     // purposefully don't support NIXOS_INSTALL_GRUB because it's legacy, and this tool isn't :)
     match env::var("NIXOS_INSTALL_BOOTLOADER") {
         Ok(var) if var == "1" => {
+            trace!("installing bootloader");
+
             if loader.exists() {
+                debug!("removing existing loader.conf");
                 fs::remove_file(&loader)?;
             }
 
+            debug!("running `bootctl install`");
             Command::new(&bootctl)
                 .args(&[
                     "install",
@@ -82,7 +91,12 @@ pub(crate) fn install(args: Args) -> Result<()> {
                 .status()?;
         }
         _ => {
+            trace!("updating bootloader");
+
             let bootloader_version = {
+                trace!("checking bootloader version");
+
+                debug!("running `bootctl status`");
                 let output = Command::new(&bootctl)
                     .args(&[&format!("--path={}", &esp.display()), "status"])
                     .output()?
@@ -109,6 +123,9 @@ pub(crate) fn install(args: Args) -> Result<()> {
             };
 
             let systemd_version = {
+                trace!("checking systemd version");
+
+                debug!("running `bootctl --version`");
                 let output = Command::new(&bootctl).arg("--version").output()?.stdout;
                 let output = str::from_utf8(&output)?;
 
@@ -123,31 +140,30 @@ pub(crate) fn install(args: Args) -> Result<()> {
 
             if let Some(bootloader_version) = bootloader_version {
                 if systemd_version > bootloader_version {
-                    writeln!(
-                        io::stdout(),
+                    info!(
                         "updating systemd-boot from {} to {}",
-                        bootloader_version,
-                        systemd_version
-                    )?;
+                        bootloader_version, systemd_version
+                    );
 
                     Command::new(&bootctl)
                         .args(&[&format!("--path={}", &esp.display()), "update"])
                         .status()?;
                 }
             } else {
-                writeln!(
-                    io::stdout(),
-                    "could not find any previously installed systemd-boot"
-                )?;
+                warn!("could not find any previously installed systemd-boot");
             }
         }
     }
 
     let generations = {
+        trace!("getting list of generations");
+
         let generations = util::all_generations(None)?;
+        let generations_len = generations.len();
+        debug!("generations_len: {}", generations_len);
 
         if let Some(limit) = args.configuration_limit {
-            let generations_len = generations.len();
+            debug!("limiting generations to max of {}", limit);
 
             generations
                 .into_iter()
@@ -161,13 +177,18 @@ pub(crate) fn install(args: Args) -> Result<()> {
     // Remove old things from both the generated entries and ESP
     // - Generated entries because we don't need to waste space on copying unused kernels / initrds / entries
     // - ESP so that we don't have unbootable entries
-    self::remove_old_entries(&generations, &args.generated_entries)?;
-    self::remove_old_entries(&generations, &esp)?;
+    debug!("removing old files from generated_entries");
+    self::remove_old_files(&generations, &args.generated_entries)?;
+    debug!("removing old files from esp");
+    self::remove_old_files(&generations, &esp)?;
 
     // Reverse the iterator because it's more likely that the generation being switched to is
     // "newer", thus will be at the end of the generated list of generations
+    debug!("finding default boot entry by comparing store paths");
     for generation in generations.iter().rev() {
         if fs::canonicalize(&generation.path)? == fs::canonicalize(&args.toplevel)? {
+            trace!("writing loader.conf for default boot entry");
+
             // We don't need to check if loader.conf already exists because we are writing it
             // directly to the `generated_entries` directory (where there cannot be one unless
             // manually placed)
@@ -193,6 +214,7 @@ pub(crate) fn install(args: Args) -> Result<()> {
 
     // If there's not enough space for everything, this will error out while copying files, before
     // anything is overwritten via renaming.
+    debug!("copying everything to the esp");
     util::atomic_tmp_copy(&args.generated_entries, &esp)?;
 
     let f = File::open(&esp)?;
@@ -200,15 +222,15 @@ pub(crate) fn install(args: Args) -> Result<()> {
 
     // TODO
     // SAFETY: idk
+    debug!("attempting to syncfs(2) the esp");
     unsafe {
         let ret = libc::syncfs(fd);
         if ret != 0 {
-            writeln!(
-                io::stderr(),
-                "could not sync {}: {:?}",
+            error!(
+                "could not sync '{}': {:?}",
                 esp.display(),
                 CStr::from_ptr(libc::strerror(ret))
-            )?;
+            );
         }
     }
 
@@ -216,8 +238,20 @@ pub(crate) fn install(args: Args) -> Result<()> {
 }
 
 // TODO: split into different binary / subcommand?
-fn remove_old_entries(generations: &[Generation], esp: &Path) -> Result<()> {
-    if !esp.exists() || !esp.join("efi/nixos").exists() || !esp.join("loader/entries").exists() {
+fn remove_old_files(generations: &[Generation], esp: &Path) -> Result<()> {
+    trace!("removing old files");
+
+    let efi_nixos = esp.join("efi/nixos");
+    let loader_entries = esp.join("loader/entries");
+
+    if !esp.exists() || !efi_nixos.exists() || !loader_entries.exists() {
+        warn!(
+            "'{}', '{}', or '{}' did not exist, not removing anything",
+            esp.display(),
+            efi_nixos.display(),
+            loader_entries.display()
+        );
+
         return Ok(());
     }
 
@@ -241,7 +275,8 @@ fn remove_old_entries(generations: &[Generation], esp: &Path) -> Result<()> {
         })
         .collect::<Vec<OsString>>();
 
-    for entry in fs::read_dir(esp.join("loader/entries"))? {
+    debug!("removing old entries");
+    for entry in fs::read_dir(loader_entries)? {
         let f = entry?.path();
         let name = f
             .file_name()
@@ -269,7 +304,8 @@ fn remove_old_entries(generations: &[Generation], esp: &Path) -> Result<()> {
         }
     }
 
-    for entry in fs::read_dir(esp.join("efi/nixos"))? {
+    debug!("removing old kernels / initrds");
+    for entry in fs::read_dir(efi_nixos)? {
         let f = entry?.path();
         let name = f.file_name().expect("filename terminated in ..");
 
