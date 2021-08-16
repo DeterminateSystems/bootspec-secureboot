@@ -217,7 +217,7 @@ pub(crate) fn install(args: Args) -> Result<()> {
 
 // TODO: split into different binary / subcommand?
 fn remove_old_entries(generations: &[Generation], esp: &Path) -> Result<()> {
-    if !esp.exists() {
+    if !esp.exists() || !esp.join("efi/nixos").exists() || !esp.join("loader/entries").exists() {
         return Ok(());
     }
 
