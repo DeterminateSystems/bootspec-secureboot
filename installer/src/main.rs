@@ -24,7 +24,7 @@ struct Args {
     /// TODO
     console_mode: String,
     /// TODO
-    configuration_limit: usize,
+    configuration_limit: Option<usize>,
     /// TODO
     editor: bool,
 
@@ -68,7 +68,7 @@ fn parse_args() -> Result<Args> {
         generated_entries: pico.value_from_fn("--generated-entries", self::parse_path)?,
         timeout: pico.opt_value_from_str("--timeout")?,
         console_mode: pico.value_from_str("--console-mode")?,
-        configuration_limit: pico.value_from_str("--configuration-limit")?,
+        configuration_limit: pico.opt_value_from_str("--configuration-limit")?,
         editor: pico.opt_value_from_str("--editor")?.unwrap_or(true),
 
         // EFI-specific
