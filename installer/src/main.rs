@@ -37,7 +37,7 @@ struct Args {
 
     // EFI-specific arguments
     /// The path to the EFI System Partition
-    esp: Option<PathBuf>,
+    esp: Vec<PathBuf>,
     /// Whether or not to touch EFI vars in the NVRAM
     can_touch_efi_vars: bool,
     /// TODO: bootctl path
@@ -99,7 +99,7 @@ fn parse_args() -> Result<Args> {
         install: pico.contains("--install"),
 
         // EFI-specific
-        esp: pico.opt_value_from_fn("--esp", self::parse_path)?,
+        esp: pico.values_from_fn("--esp", self::parse_path)?,
         can_touch_efi_vars: pico.contains("--touch-efi-vars"),
         bootctl: pico.opt_value_from_fn("--bootctl", self::parse_path)?,
     };
