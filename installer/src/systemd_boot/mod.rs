@@ -33,10 +33,11 @@
 */
 
 use std::ffi::{CStr, OsString};
+use std::fmt::Write as _;
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::Write as _;
 use std::os::unix::io::AsRawFd;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 use std::str;
 
@@ -89,99 +90,38 @@ pub(crate) fn install(args: Args) -> Result<()> {
     } else {
         trace!("updating bootloader");
 
-        let bootloader_version = {
-            trace!("checking bootloader version");
+        let bootloader_version = self::get_bootloader_version(&bootctl, &esp)?;
+        let systemd_version = self::get_systemd_version(&bootctl)?;
 
-            debug!("running `bootctl status`");
-            let output = Command::new(&bootctl)
-                .args(&[&format!("--path={}", &esp.display()), "status"])
-                .output()?
-                .stdout;
-            let output = str::from_utf8(&output)?;
+        if self::bootloader_is_old(bootloader_version, systemd_version)? {
+            info!(
+                "updating systemd-boot from {} to {}",
+                bootloader_version.expect("bootloader version was missing"),
+                systemd_version
+            );
 
-            // pat in its own str so that `cargo fmt` doesn't choke...
-            let pat =
-                "^\\W+File:.*/EFI/(BOOT|systemd)/.*\\.efi \\(systemd-boot (?P<version>\\d+)\\)$";
-
-            // See enumerate_binaries() in systemd bootctl.c for code which generates this:
-            // https://github.com/systemd/systemd/blob/788733428d019791ab9d780b4778a472794b3748/src/boot/bootctl.c#L221-L224
-            let re = RegexBuilder::new(pat)
-                .multi_line(true)
-                .case_insensitive(true)
-                .build()?;
-            let caps = re.captures(output);
-
-            if let Some(caps) = caps {
-                caps.name("version")
-                    .and_then(|cap| cap.as_str().parse::<usize>().ok())
-            } else {
-                None
-            }
-        };
-
-        let systemd_version = {
-            trace!("checking systemd version");
-
-            debug!("running `bootctl --version`");
-            let output = Command::new(&bootctl).arg("--version").output()?.stdout;
-            let output = str::from_utf8(&output)?;
-
-            let re = Regex::new("systemd (?P<version>\\d+) \\(\\d+\\)")?;
-            let caps = re.captures(output).expect("");
-
-            caps.name("version")
-                .expect("couldn't find version")
-                .as_str()
-                .parse::<usize>()?
-        };
-
-        if let Some(bootloader_version) = bootloader_version {
-            if systemd_version > bootloader_version {
-                info!(
-                    "updating systemd-boot from {} to {}",
-                    bootloader_version, systemd_version
-                );
-
-                Command::new(&bootctl)
-                    .args(&[&format!("--path={}", &esp.display()), "update"])
-                    .status()?;
-            }
-        } else {
-            warn!("could not find any previously installed systemd-boot");
+            Command::new(&bootctl)
+                .args(&[&format!("--path={}", &esp.display()), "update"])
+                .status()?;
         }
     }
 
-    let generations = {
-        trace!("getting list of generations");
-
-        let generations = util::all_generations(None)?;
-        let generations_len = generations.len();
-        debug!("generations_len: {}", generations_len);
-
-        if let Some(limit) = args.configuration_limit {
-            debug!("limiting generations to max of {}", limit);
-
-            generations
-                .into_iter()
-                .skip(generations_len.saturating_sub(limit))
-                .collect::<Vec<_>>()
-        } else {
-            generations
-        }
-    };
+    let system_generations = util::all_generations(None)?;
+    let wanted_generations =
+        self::wanted_generations(system_generations, args.configuration_limit)?;
 
     // Remove old things from both the generated entries and ESP
     // - Generated entries because we don't need to waste space on copying unused kernels / initrds / entries
     // - ESP so that we don't have unbootable entries
     debug!("removing old files from generated_entries");
-    self::remove_old_files(&generations, &args.generated_entries)?;
+    self::remove_old_files(&wanted_generations, &args.generated_entries)?;
     debug!("removing old files from esp");
-    self::remove_old_files(&generations, &esp)?;
+    self::remove_old_files(&wanted_generations, &esp)?;
 
     // Reverse the iterator because it's more likely that the generation being switched to is
     // "newer", thus will be at the end of the generated list of generations
     debug!("finding default boot entry by comparing store paths");
-    for generation in generations.iter().rev() {
+    for generation in wanted_generations.iter().rev() {
         if fs::canonicalize(&generation.path)? == fs::canonicalize(&args.toplevel)? {
             trace!("writing loader.conf for default boot entry");
 
@@ -190,19 +130,14 @@ pub(crate) fn install(args: Args) -> Result<()> {
             // manually placed)
             let gen_loader = args.generated_entries.join("loader/loader.conf");
             let mut f = File::create(&gen_loader)?;
+            let contents = self::create_loader_conf(
+                args.timeout,
+                generation.idx,
+                args.editor,
+                args.console_mode,
+            )?;
 
-            if let Some(timeout) = args.timeout {
-                writeln!(f, "timeout {}", timeout)?;
-            }
-            // if let Some(profile) = args.profile {
-            //     // TODO: support system profiles?
-            // } else {
-            writeln!(f, "default nixos-generation-{}.conf", generation.idx)?;
-            // }
-            if !args.editor {
-                writeln!(f, "editor 0")?;
-            }
-            writeln!(f, "console-mode {}", args.console_mode)?;
+            f.write_all(contents.as_bytes())?;
 
             break;
         }
@@ -233,6 +168,142 @@ pub(crate) fn install(args: Args) -> Result<()> {
     Ok(())
 }
 
+pub(crate) fn create_loader_conf(
+    timeout: Option<usize>,
+    idx: usize,
+    editor: bool,
+    console_mode: String,
+) -> Result<String> {
+    let mut s = String::new();
+
+    if let Some(timeout) = timeout {
+        writeln!(s, "timeout {}", timeout)?;
+    }
+    // if let Some(profile) = profile {
+    //     // TODO: support system profiles?
+    // } else {
+    writeln!(s, "default nixos-generation-{}.conf", idx)?;
+    // }
+    if !editor {
+        writeln!(s, "editor 0")?;
+    }
+    writeln!(s, "console-mode {}", console_mode)?;
+
+    Ok(s)
+}
+
+pub(crate) fn bootloader_is_old(
+    bootloader_version: Option<usize>,
+    systemd_version: usize,
+) -> Result<bool> {
+    if let Some(bootloader_version) = bootloader_version {
+        let old = systemd_version > bootloader_version;
+        Ok(old)
+    } else {
+        warn!("could not find any previously installed systemd-boot");
+        Ok(false)
+    }
+}
+
+pub(crate) fn get_bootloader_version(bootctl: &Path, esp: &Path) -> Result<Option<usize>> {
+    trace!("checking bootloader version");
+
+    debug!("running `bootctl status`");
+    let output = Command::new(&bootctl)
+        .args(&[&format!("--path={}", &esp.display()), "status"])
+        .output()?
+        .stdout;
+
+    let version = self::parse_bootloader_version(&output)?;
+
+    Ok(version)
+}
+
+pub(crate) fn parse_bootloader_version(output: &[u8]) -> Result<Option<usize>> {
+    let output = str::from_utf8(output)?;
+
+    // pat in its own str so that `cargo fmt` doesn't choke...
+    let pat = "^\\W+File:.*/EFI/(BOOT|systemd)/.*\\.efi \\(systemd-boot (?P<version>\\d+)\\)$";
+
+    // See enumerate_binaries() in systemd bootctl.c for code which generates this:
+    // https://github.com/systemd/systemd/blob/788733428d019791ab9d780b4778a472794b3748/src/boot/bootctl.c#L221-L224
+    let re = RegexBuilder::new(pat)
+        .multi_line(true)
+        .case_insensitive(true)
+        .build()?;
+    let caps = re.captures(output);
+
+    let version = if let Some(caps) = caps {
+        caps.name("version")
+            .and_then(|cap| cap.as_str().parse::<usize>().ok())
+    } else {
+        None
+    };
+
+    Ok(version)
+}
+
+pub(crate) fn get_systemd_version(bootctl: &Path) -> Result<usize> {
+    trace!("checking systemd version");
+
+    debug!("running `bootctl --version`");
+    let output = Command::new(&bootctl).arg("--version").output()?.stdout;
+
+    let version = self::parse_systemd_version(&output)?;
+
+    Ok(version)
+}
+
+pub(crate) fn parse_systemd_version(output: &[u8]) -> Result<usize> {
+    let output = str::from_utf8(output)?;
+
+    let re = Regex::new("systemd (?P<version>\\d+) \\(\\d+\\)")?;
+    let caps = re.captures(output).ok_or("failed to get capture groups")?;
+
+    let version = caps
+        .name("version")
+        .ok_or("couldn't find version")?
+        .as_str()
+        .parse::<usize>()?;
+
+    Ok(version)
+}
+
+pub(crate) fn wanted_generations(
+    generations: Vec<Generation>,
+    configuration_limit: Option<usize>,
+) -> Result<Vec<Generation>> {
+    trace!("getting list of generations");
+
+    let generations_len = generations.len();
+    debug!("generations_len: {}", generations_len);
+
+    let generations = if let Some(limit) = configuration_limit {
+        debug!("limiting generations to max of {}", limit);
+
+        generations
+            .into_iter()
+            .skip(generations_len.saturating_sub(limit))
+            .collect::<Vec<_>>()
+    } else {
+        generations
+    };
+
+    Ok(generations)
+}
+
+pub(crate) fn get_required_file_paths(generations: Vec<Generation>) -> Result<Vec<OsString>> {
+    let mut known_paths = Vec::new();
+
+    for generation in generations {
+        known_paths.push(generation.conf_filename);
+        known_paths.push(generation.kernel_filename);
+        known_paths.push(generation.initrd_filename);
+    }
+
+    Ok(known_paths)
+}
+
 // TODO: split into different binary / subcommand?
 fn remove_old_files(generations: &[Generation], path: &Path) -> Result<()> {
     trace!("removing old files");
@@ -251,51 +322,20 @@ fn remove_old_files(generations: &[Generation], path: &Path) -> Result<()> {
         return Ok(());
     }
 
-    let mut known_paths: Vec<PathBuf> = Vec::new();
-
-    for generation in generations {
-        let path = &generation.path;
-        known_paths.push(fs::canonicalize(path.join("kernel"))?);
-        known_paths.push(fs::canonicalize(path.join("initrd"))?);
-    }
-
-    let known_files = known_paths
-        .iter()
-        .map(|e| {
-            let mut s = e
-                .to_string_lossy()
-                .replace("/nix/store/", "")
-                .replace("/", "-");
-            s.push_str(".efi");
-            s.into()
-        })
-        .collect::<Vec<OsString>>();
+    debug!("calculating required file paths");
+    let required_file_paths = self::get_required_file_paths(generations.to_vec())?;
 
     debug!("removing old entries");
     for entry in fs::read_dir(loader_entries)? {
         let f = entry?.path();
-        let name = f
-            .file_name()
-            .expect("filename terminated in ..")
-            .to_string_lossy();
+        let name = f.file_name().ok_or("filename terminated in ..")?;
 
         // Don't want to delete user's custom boot entries
-        if !ENTRY_RE.is_match(&name) {
+        if !ENTRY_RE.is_match(&name.to_string_lossy()) {
             continue;
         }
 
-        if !generations.iter().any(|e| {
-            let caps = ENTRY_RE.captures(&name).unwrap();
-            let profile = caps.name("profile").map(|e| e.as_str());
-            let idx = caps
-                .name("generation")
-                .expect("couldn't find generation")
-                .as_str()
-                .parse::<usize>()
-                .expect("couldn't parse generation into number");
-
-            e.idx == idx && e.profile.as_deref() == profile
-        }) {
+        if !required_file_paths.iter().any(|e| e == name) {
             fs::remove_file(f)?;
         }
     }
@@ -303,12 +343,143 @@ fn remove_old_files(generations: &[Generation], path: &Path) -> Result<()> {
     debug!("removing old kernels / initrds");
     for entry in fs::read_dir(efi_nixos)? {
         let f = entry?.path();
-        let name = f.file_name().expect("filename terminated in ..");
+        let name = f.file_name().ok_or("filename terminated in ..")?;
 
-        if !known_files.iter().any(|e| e == name) {
+        if !required_file_paths.iter().any(|e| e == name) {
             fs::remove_file(f)?;
         }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::util::Generation;
+    use std::ffi::OsString;
+
+    #[test]
+    fn test_create_bootloader_config() {
+        assert_eq!(
+            super::create_loader_conf(Some(1), 125, true, String::from("max")).unwrap(),
+            r#"timeout 1
+default nixos-generation-125.conf
+console-mode max
+"#
+        );
+        assert_eq!(
+            super::create_loader_conf(Some(2), 126, false, String::from("max")).unwrap(),
+            r#"timeout 2
+default nixos-generation-126.conf
+editor 0
+console-mode max
+"#
+        );
+    }
+
+    #[test]
+    fn test_bootloader_is_old() {
+        assert_eq!(super::bootloader_is_old(Some(246), 247).unwrap(), true);
+        assert_eq!(super::bootloader_is_old(Some(247), 246).unwrap(), false);
+        assert_eq!(super::bootloader_is_old(Some(247), 247).unwrap(), false);
+        assert_eq!(super::bootloader_is_old(None, 247).unwrap(), false);
+    }
+
+    #[test]
+    fn test_parse_bootloader_version() {
+        assert_eq!(
+            super::parse_bootloader_version(
+                "         File: └─/EFI/systemd/systemd-bootx64.efi (systemd-boot 247)".as_bytes()
+            )
+            .unwrap(),
+            Some(247)
+        );
+        assert_eq!(super::parse_bootloader_version(b"").unwrap(), None);
+    }
+
+    #[test]
+    fn test_parse_systemd_version() {
+        assert_eq!(
+            super::parse_systemd_version(b"systemd 247 (247)").unwrap(),
+            247
+        );
+        assert!(super::parse_systemd_version(b"systemd (247)").is_err());
+        assert!(super::parse_systemd_version(b"systemc 247 (247)").is_err());
+    }
+
+    #[test]
+    fn test_wanted_generations() {
+        let gens = [
+            vec![
+                Generation {
+                    idx: 1,
+                    profile: None,
+                    conf_filename: OsString::from("nixos-generation-1.conf"),
+                    ..Default::default()
+                },
+                Generation {
+                    idx: 2,
+                    profile: None,
+                    conf_filename: OsString::from("nixos-generation-2.conf"),
+                    ..Default::default()
+                },
+            ],
+            vec![
+                Generation {
+                    idx: 1,
+                    profile: Some(String::from("test")),
+                    conf_filename: OsString::from("nixos-test-generation-1.conf"),
+                    ..Default::default()
+                },
+                Generation {
+                    idx: 2,
+                    profile: Some(String::from("test")),
+                    conf_filename: OsString::from("nixos-test-generation-2.conf"),
+                    ..Default::default()
+                },
+            ],
+        ];
+
+        for generations in gens {
+            let ret_generations = super::wanted_generations(generations.clone(), None).unwrap();
+            assert_eq!(ret_generations.len(), 2);
+            assert_eq!(ret_generations[0], generations[0]);
+            assert_eq!(ret_generations[1], generations[1]);
+
+            let ret_generations = super::wanted_generations(generations.clone(), Some(1)).unwrap();
+            assert_eq!(ret_generations.len(), 1);
+            assert_eq!(ret_generations[0], generations[1]);
+            assert_eq!(ret_generations.get(1), None);
+        }
+    }
+
+    #[test]
+    fn test_get_known_filenames() {
+        let generations = vec![
+            Generation {
+                idx: 1,
+                profile: None,
+                conf_filename: OsString::from("nixos-generation-1.conf"),
+                kernel_filename: OsString::from("kernel-1"),
+                initrd_filename: OsString::from("initrd-1"),
+                ..Default::default()
+            },
+            Generation {
+                idx: 2,
+                profile: None,
+                conf_filename: OsString::from("nixos-generation-2.conf"),
+                kernel_filename: OsString::from("kernel-2"),
+                initrd_filename: OsString::from("initrd-2"),
+                ..Default::default()
+            },
+        ];
+
+        let known_filenames = super::get_required_file_paths(generations.clone()).unwrap();
+
+        for gen in generations {
+            assert!(known_filenames.iter().any(|e| e == &gen.conf_filename));
+            assert!(known_filenames.iter().any(|e| e == &gen.kernel_filename));
+            assert!(known_filenames.iter().any(|e| e == &gen.initrd_filename));
+        }
+    }
 }

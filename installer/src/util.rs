@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
@@ -13,11 +14,14 @@ lazy_static::lazy_static! {
     static ref GENERATION_RE: Regex = Regex::new("/(?P<profile>[^-]+)-(?P<generation>\\d+)-link").unwrap();
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Generation {
     pub idx: usize,
     pub profile: Option<String>,
     pub path: PathBuf,
+    pub conf_filename: OsString,
+    pub kernel_filename: OsString,
+    pub initrd_filename: OsString,
 }
 
 pub fn all_generations(profile: Option<String>) -> Result<Vec<Generation>> {
@@ -35,16 +39,41 @@ pub fn all_generations(profile: Option<String>) -> Result<Vec<Generation>> {
             .as_str()
             .parse::<usize>()?;
 
+        let kernel_path = fs::canonicalize(path.join("kernel"))?;
+        let kernel_filename = self::store_path_to_filename(kernel_path)?;
+        let initrd_path = fs::canonicalize(path.join("initrd"))?;
+        let initrd_filename = self::store_path_to_filename(initrd_path)?;
+        let conf_filename = if let Some(profile) = &profile {
+            format!("nixos-{}-generation-{}.conf", profile, idx)
+        } else {
+            format!("nixos-generation-{}.conf", idx)
+        };
+
         generations.push(Generation {
             idx,
             profile: profile.clone(),
             path,
+            conf_filename: conf_filename.into(),
+            kernel_filename,
+            initrd_filename,
         })
     }
 
     generations.sort_by(|a, b| a.idx.cmp(&b.idx));
 
     Ok(generations)
+}
+
+pub fn store_path_to_filename(path: PathBuf) -> Result<OsString> {
+    let s = path.to_string_lossy();
+
+    if !s.starts_with("/nix/store/") {
+        return Err("provided path wasn't a Nix store path".into());
+    }
+
+    let s = s.replace("/nix/store/", "").replace("/", "") + ".efi";
+
+    Ok(s.into())
 }
 
 pub fn profile_path(profile: &Option<String>) -> String {
