@@ -234,16 +234,16 @@ pub(crate) fn install(args: Args) -> Result<()> {
 }
 
 // TODO: split into different binary / subcommand?
-fn remove_old_files(generations: &[Generation], esp: &Path) -> Result<()> {
+fn remove_old_files(generations: &[Generation], path: &Path) -> Result<()> {
     trace!("removing old files");
 
-    let efi_nixos = esp.join("efi/nixos");
-    let loader_entries = esp.join("loader/entries");
+    let efi_nixos = path.join("efi/nixos");
+    let loader_entries = path.join("loader/entries");
 
-    if !esp.exists() || !efi_nixos.exists() || !loader_entries.exists() {
+    if !path.exists() || !efi_nixos.exists() || !loader_entries.exists() {
         warn!(
             "'{}', '{}', or '{}' did not exist, not removing anything",
-            esp.display(),
+            path.display(),
             efi_nixos.display(),
             loader_entries.display()
         );
