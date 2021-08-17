@@ -1,13 +1,19 @@
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+
+use regex::Regex;
 
 use crate::Result;
 
 // TODO: docstrings for these functions
 
-#[derive(Debug)]
+// TODO: shared crate that has all these constant-like things in it so they don't get out of sync?
+lazy_static::lazy_static! {
+    static ref GENERATION_RE: Regex = Regex::new("/(?P<profile>[^-]+)-(?P<generation>\\d+)-link").unwrap();
+}
+
+#[derive(Debug, Clone)]
 pub struct Generation {
     pub idx: usize,
     pub profile: Option<String>,
@@ -15,32 +21,28 @@ pub struct Generation {
 }
 
 pub fn all_generations(profile: Option<String>) -> Result<Vec<Generation>> {
-    let profile_path = profile_path(&profile);
-    // TODO: nix-env could be provided as a flag?
-    let cmd = Command::new("nix-env")
-        .args(&["-p", &profile_path, "--list-generations"])
-        .output()?;
-
-    if cmd.stdout.is_empty() {
-        return Err("couldn't list generations; are you root?".into());
-    }
-
-    let output = String::from_utf8(cmd.stdout)?;
     let mut generations = Vec::new();
+    let profile_path = self::profile_path(&profile);
+    let pat = format!("{}-*-link", profile_path);
 
-    for line in output.lines() {
-        let generation = line
-            .trim()
-            .split(' ')
-            .next()
-            .expect("couldn't find generation number");
+    for entry in glob::glob(&pat)? {
+        let path = entry?;
+        let s = path.display().to_string();
+        let idx = GENERATION_RE
+            .captures(&s)
+            .and_then(|c| c.name("generation"))
+            .expect("couldn't find generation")
+            .as_str()
+            .parse::<usize>()?;
 
         generations.push(Generation {
-            idx: generation.parse()?,
+            idx,
             profile: profile.clone(),
-            path: PathBuf::from(format!("{}-{}-link", profile_path, generation)),
-        });
+            path,
+        })
     }
+
+    generations.sort_by(|a, b| a.idx.cmp(&b.idx));
 
     Ok(generations)
 }
