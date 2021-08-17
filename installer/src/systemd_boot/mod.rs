@@ -68,23 +68,29 @@ pub(crate) fn install(args: Args) -> Result<()> {
     let dry_run = args.dry_run;
     debug!("dry_run? {}", dry_run);
 
-    let plan = self::create_plan(args)?;
+    if args.esp.is_empty() {
+        return Err("No ESP(s) specified; exiting.".into());
+    }
 
-    if dry_run {
-        writeln!(std::io::stdout(), "{:#?}", plan)?;
-    } else {
-        self::consume_plan(plan)?;
+    let esps = args.esp.clone();
+    for esp in esps {
+        let plan = self::create_plan(args.clone(), esp)?;
+
+        if dry_run {
+            writeln!(std::io::stdout(), "{:#?}", plan)?;
+        } else {
+            self::consume_plan(plan)?;
+        }
     }
 
     Ok(())
 }
 
-pub(crate) fn create_plan(args: Args) -> Result<Vec<SystemdBootPlanState>> {
+pub(crate) fn create_plan(args: Args, esp: PathBuf) -> Result<Vec<SystemdBootPlanState>> {
     let mut plan = vec![SystemdBootPlanState::Start];
 
-    // systemd_boot requires the path to the ESP be provided, so it's safe to unwrap (until I make
+    // systemd_boot requires the path to bootctl be provided, so it's safe to unwrap (until I make
     // this a subcommand and remove the Option wrapper altogether)
-    let esp = args.esp.unwrap();
     let bootctl = args.bootctl.unwrap();
     let loader = esp.join("loader/loader.conf");
 
