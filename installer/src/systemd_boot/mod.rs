@@ -5,13 +5,16 @@ use std::io::Write as _;
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
 use std::process::Command;
-use std::str;
 
 use log::{debug, error, info, trace, warn};
-use regex::{Regex, RegexBuilder};
+use regex::Regex;
 
 use crate::util::{self, Generation};
 use crate::{Args, Result};
+use version::systemd::SystemdVersion;
+use version::systemd_boot::SystemdBootVersion;
+
+mod version;
 
 lazy_static::lazy_static! {
     static ref ENTRY_RE: Regex = Regex::new("nixos-(?:(?P<profile>[^-]+)-)?generation-(?P<generation>\\d+).conf").unwrap();
@@ -56,19 +59,22 @@ pub(crate) fn install(args: Args) -> Result<()> {
     } else {
         trace!("updating bootloader");
 
-        let bootloader_version = self::get_bootloader_version(&bootctl, &esp)?;
-        let systemd_version = self::get_systemd_version(&bootctl)?;
+        let bootloader_version = SystemdBootVersion::detect_version(&bootctl, &esp)?;
+        let systemd_version = SystemdVersion::detect_version(&bootctl)?;
 
-        if self::bootloader_is_old(bootloader_version, systemd_version)? {
-            info!(
-                "updating systemd-boot from {} to {}",
-                bootloader_version.expect("bootloader version was missing"),
-                systemd_version
-            );
+        if let Some(bootloader_version) = bootloader_version {
+            if bootloader_version < systemd_version {
+                info!(
+                    "updating systemd-boot from {} to {}",
+                    bootloader_version.version, systemd_version.version
+                );
 
-            Command::new(&bootctl)
-                .args(&[&format!("--path={}", &esp.display()), "update"])
-                .status()?;
+                Command::new(&bootctl)
+                    .args(&["update", "--path", &esp.display().to_string()])
+                    .status()?;
+            }
+        } else {
+            warn!("could not find any previously installed systemd-boot");
         }
     }
 
@@ -156,83 +162,6 @@ pub(crate) fn create_loader_conf(
     writeln!(s, "console-mode {}", console_mode)?;
 
     Ok(s)
-}
-
-pub(crate) fn bootloader_is_old(
-    bootloader_version: Option<usize>,
-    systemd_version: usize,
-) -> Result<bool> {
-    if let Some(bootloader_version) = bootloader_version {
-        let old = systemd_version > bootloader_version;
-        Ok(old)
-    } else {
-        warn!("could not find any previously installed systemd-boot");
-        Ok(false)
-    }
-}
-
-pub(crate) fn get_bootloader_version(bootctl: &Path, esp: &Path) -> Result<Option<usize>> {
-    trace!("checking bootloader version");
-
-    debug!("running `bootctl status`");
-    let output = Command::new(&bootctl)
-        .args(&[&format!("--path={}", &esp.display()), "status"])
-        .output()?
-        .stdout;
-
-    let version = self::parse_bootloader_version(&output)?;
-
-    Ok(version)
-}
-
-pub(crate) fn parse_bootloader_version(output: &[u8]) -> Result<Option<usize>> {
-    let output = str::from_utf8(output)?;
-
-    // pat in its own str so that `cargo fmt` doesn't choke...
-    let pat = "^\\W+File:.*/EFI/(BOOT|systemd)/.*\\.efi \\(systemd-boot (?P<version>\\d+)\\)$";
-
-    // See enumerate_binaries() in systemd bootctl.c for code which generates this:
-    // https://github.com/systemd/systemd/blob/788733428d019791ab9d780b4778a472794b3748/src/boot/bootctl.c#L221-L224
-    let re = RegexBuilder::new(pat)
-        .multi_line(true)
-        .case_insensitive(true)
-        .build()?;
-    let caps = re.captures(output);
-
-    let version = if let Some(caps) = caps {
-        caps.name("version")
-            .and_then(|cap| cap.as_str().parse::<usize>().ok())
-    } else {
-        None
-    };
-
-    Ok(version)
-}
-
-pub(crate) fn get_systemd_version(bootctl: &Path) -> Result<usize> {
-    trace!("checking systemd version");
-
-    debug!("running `bootctl --version`");
-    let output = Command::new(&bootctl).arg("--version").output()?.stdout;
-
-    let version = self::parse_systemd_version(&output)?;
-
-    Ok(version)
-}
-
-pub(crate) fn parse_systemd_version(output: &[u8]) -> Result<usize> {
-    let output = str::from_utf8(output)?;
-
-    let re = Regex::new("systemd (?P<version>\\d+) \\(\\d+\\)")?;
-    let caps = re.captures(output).ok_or("failed to get capture groups")?;
-
-    let version = caps
-        .name("version")
-        .ok_or("couldn't find version")?
-        .as_str()
-        .parse::<usize>()?;
-
-    Ok(version)
 }
 
 pub(crate) fn wanted_generations(
@@ -341,36 +270,6 @@ editor 0
 console-mode max
 "#
         );
-    }
-
-    #[test]
-    fn test_bootloader_is_old() {
-        assert_eq!(super::bootloader_is_old(Some(246), 247).unwrap(), true);
-        assert_eq!(super::bootloader_is_old(Some(247), 246).unwrap(), false);
-        assert_eq!(super::bootloader_is_old(Some(247), 247).unwrap(), false);
-        assert_eq!(super::bootloader_is_old(None, 247).unwrap(), false);
-    }
-
-    #[test]
-    fn test_parse_bootloader_version() {
-        assert_eq!(
-            super::parse_bootloader_version(
-                "         File: └─/EFI/systemd/systemd-bootx64.efi (systemd-boot 247)".as_bytes()
-            )
-            .unwrap(),
-            Some(247)
-        );
-        assert_eq!(super::parse_bootloader_version(b"").unwrap(), None);
-    }
-
-    #[test]
-    fn test_parse_systemd_version() {
-        assert_eq!(
-            super::parse_systemd_version(b"systemd 247 (247)").unwrap(),
-            247
-        );
-        assert!(super::parse_systemd_version(b"systemd (247)").is_err());
-        assert!(super::parse_systemd_version(b"systemc 247 (247)").is_err());
     }
 
     #[test]
