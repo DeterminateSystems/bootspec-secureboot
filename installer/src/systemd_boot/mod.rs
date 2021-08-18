@@ -21,39 +21,38 @@ lazy_static::lazy_static! {
 }
 
 #[derive(Debug)]
-pub(crate) enum SystemdBootPlanState {
+pub(crate) enum SystemdBootPlanState<'a> {
     Start, // transition to install or update based on args.install
     Install {
         loader: Option<PathBuf>, // Some(path) if exists
-        bootctl: PathBuf,
-        esp: PathBuf,
+        bootctl: &'a Path,
+        esp: &'a Path,
         can_touch_efi_vars: bool,
     },
     Update {
         bootloader_version: Option<SystemdBootVersion>,
         systemd_version: SystemdVersion,
-        bootctl: PathBuf,
-        esp: PathBuf,
+        bootctl: &'a Path,
+        esp: &'a Path,
     },
     Prune {
-        // transitions to itself for generated_entries, then to esp
         generations: Vec<Generation>,
-        path: PathBuf,
+        paths: Vec<&'a Path>,
     },
     WriteLoader {
         path: PathBuf,
         timeout: Option<usize>,
         index: usize,
         editor: bool,
-        console_mode: String,
+        console_mode: &'a str,
     },
     // TODO: "Hook" phase here?
     CopyToEsp {
-        generated_entries: PathBuf,
-        esp: PathBuf,
+        generated_entries: &'a Path,
+        esp: &'a Path,
     },
     Syncfs {
-        esp: PathBuf,
+        esp: &'a Path,
     },
     End,
 }
@@ -72,9 +71,9 @@ pub(crate) fn install(args: Args) -> Result<()> {
         return Err("No ESP(s) specified; exiting.".into());
     }
 
-    let esps = args.esp.clone();
+    let esps = &args.esp;
     for esp in esps {
-        let plan = self::create_plan(args.clone(), esp)?;
+        let plan = self::create_plan(&args, esp)?;
 
         if dry_run {
             writeln!(std::io::stdout(), "{:#?}", plan)?;
@@ -86,12 +85,12 @@ pub(crate) fn install(args: Args) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn create_plan(args: Args, esp: PathBuf) -> Result<Vec<SystemdBootPlanState>> {
+pub(crate) fn create_plan<'a>(args: &'a Args, esp: &'a Path) -> Result<SystemdBootPlan<'a>> {
     let mut plan = vec![SystemdBootPlanState::Start];
 
     // systemd_boot requires the path to bootctl be provided, so it's safe to unwrap (until I make
     // this a subcommand and remove the Option wrapper altogether)
-    let bootctl = args.bootctl.unwrap();
+    let bootctl = args.bootctl.as_ref().unwrap();
     let loader = esp.join("loader/loader.conf");
 
     if args.install {
@@ -100,20 +99,20 @@ pub(crate) fn create_plan(args: Args, esp: PathBuf) -> Result<Vec<SystemdBootPla
         plan.push(SystemdBootPlanState::Install {
             loader,
             bootctl,
-            esp: esp.clone(),
+            esp,
             can_touch_efi_vars: args.can_touch_efi_vars,
         });
     } else {
         trace!("updating bootloader");
 
-        let bootloader_version = SystemdBootVersion::detect_version(&bootctl, &esp)?;
-        let systemd_version = SystemdVersion::detect_version(&bootctl)?;
+        let bootloader_version = SystemdBootVersion::detect_version(bootctl, esp)?;
+        let systemd_version = SystemdVersion::detect_version(bootctl)?;
 
         plan.push(SystemdBootPlanState::Update {
             bootloader_version,
             systemd_version,
             bootctl,
-            esp: esp.clone(),
+            esp,
         });
     }
 
@@ -124,14 +123,9 @@ pub(crate) fn create_plan(args: Args, esp: PathBuf) -> Result<Vec<SystemdBootPla
     // Remove old things from both the generated entries and ESP
     // - Generated entries because we don't need to waste space on copying unused kernels / initrds / entries
     // - ESP so that we don't have unbootable entries
-
     plan.push(SystemdBootPlanState::Prune {
         generations: wanted_generations.clone(),
-        path: args.generated_entries.clone(),
-    });
-    plan.push(SystemdBootPlanState::Prune {
-        generations: wanted_generations.clone(),
-        path: esp.clone(),
+        paths: vec![&args.generated_entries, esp],
     });
 
     // Reverse the iterator because it's more likely that the generation being switched to is
@@ -144,7 +138,7 @@ pub(crate) fn create_plan(args: Args, esp: PathBuf) -> Result<Vec<SystemdBootPla
                 timeout: args.timeout,
                 index: generation.idx,
                 editor: args.editor,
-                console_mode: args.console_mode,
+                console_mode: &args.console_mode,
             });
 
             break;
@@ -152,8 +146,8 @@ pub(crate) fn create_plan(args: Args, esp: PathBuf) -> Result<Vec<SystemdBootPla
     }
 
     plan.push(SystemdBootPlanState::CopyToEsp {
-        generated_entries: args.generated_entries,
-        esp: esp.clone(),
+        generated_entries: &args.generated_entries,
+        esp,
     });
 
     // If there's not enough space for everything, this will error out while copying files, before
@@ -223,12 +217,14 @@ fn consume_plan(plan: SystemdBootPlan) -> Result<()> {
                     warn!("could not find any previously installed systemd-boot");
                 }
             }
-            Prune { generations, path } => {
-                debug!(
-                    "removing old entries / kernels/ initrds from '{}'",
-                    &path.display()
-                );
-                self::remove_old_files(&generations, &path)?;
+            Prune { generations, paths } => {
+                for path in paths {
+                    debug!(
+                        "removing old entries / kernels/ initrds from '{}'",
+                        &path.display()
+                    );
+                    self::remove_old_files(&generations, path)?;
+                }
             }
             WriteLoader {
                 path,
@@ -252,7 +248,7 @@ fn consume_plan(plan: SystemdBootPlan) -> Result<()> {
                 esp,
             } => {
                 debug!("copying everything to the esp");
-                util::atomic_tmp_copy(&generated_entries, &esp)?;
+                util::atomic_tmp_copy(generated_entries, esp)?;
             }
             Syncfs { esp } => {
                 let f = File::open(&esp)?;
@@ -285,7 +281,7 @@ pub(crate) fn create_loader_conf(
     timeout: Option<usize>,
     idx: usize,
     editor: bool,
-    console_mode: String,
+    console_mode: &str,
 ) -> Result<String> {
     let mut s = String::new();
 
@@ -397,14 +393,14 @@ mod tests {
     #[test]
     fn test_create_bootloader_config() {
         assert_eq!(
-            super::create_loader_conf(Some(1), 125, true, String::from("max")).unwrap(),
+            super::create_loader_conf(Some(1), 125, true, "max").unwrap(),
             r#"timeout 1
 default nixos-generation-125.conf
 console-mode max
 "#
         );
         assert_eq!(
-            super::create_loader_conf(Some(2), 126, false, String::from("max")).unwrap(),
+            super::create_loader_conf(Some(2), 126, false, "max").unwrap(),
             r#"timeout 2
 default nixos-generation-126.conf
 editor 0
