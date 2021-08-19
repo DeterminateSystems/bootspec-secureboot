@@ -70,7 +70,7 @@ pub(crate) fn create_loader_conf(
 pub(crate) fn wanted_generations(
     generations: Vec<Generation>,
     configuration_limit: Option<usize>,
-) -> Result<Vec<Generation>> {
+) -> Vec<Generation> {
     trace!("getting list of generations");
 
     let generations_len = generations.len();
@@ -87,7 +87,7 @@ pub(crate) fn wanted_generations(
         generations
     };
 
-    Ok(generations)
+    generations
 }
 
 pub(crate) fn get_required_file_paths(generations: Vec<Generation>) -> Result<Vec<OsString>> {
@@ -209,12 +209,12 @@ console-mode max
         ];
 
         for generations in gens {
-            let ret_generations = super::wanted_generations(generations.clone(), None).unwrap();
+            let ret_generations = super::wanted_generations(generations.clone(), None);
             assert_eq!(ret_generations.len(), 2);
             assert_eq!(ret_generations[0], generations[0]);
             assert_eq!(ret_generations[1], generations[1]);
 
-            let ret_generations = super::wanted_generations(generations.clone(), Some(1)).unwrap();
+            let ret_generations = super::wanted_generations(generations.clone(), Some(1));
             assert_eq!(ret_generations.len(), 1);
             assert_eq!(ret_generations[0], generations[1]);
             assert_eq!(ret_generations.get(1), None);

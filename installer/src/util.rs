@@ -56,7 +56,7 @@ pub fn all_generations(profile: Option<String>) -> Result<Vec<Generation>> {
             conf_filename: conf_filename.into(),
             kernel_filename,
             initrd_filename,
-        })
+        });
     }
 
     generations.sort_by(|a, b| a.idx.cmp(&b.idx));
