@@ -82,7 +82,7 @@ pub(crate) fn create_plan<'a>(args: &'a Args, esp: &'a Path) -> Result<SystemdBo
 
     let system_generations = util::all_generations(None)?;
     let wanted_generations =
-        super::wanted_generations(system_generations, args.configuration_limit)?;
+        super::wanted_generations(system_generations, args.configuration_limit);
 
     // Remove old things from both the generated entries and ESP
     // - Generated entries because we don't need to waste space on copying unused kernels / initrds / entries
