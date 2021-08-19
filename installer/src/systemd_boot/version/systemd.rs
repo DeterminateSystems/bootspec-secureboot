@@ -39,8 +39,9 @@ impl SystemdVersion {
     pub fn detect_version(bootctl: &Path) -> Result<Self> {
         trace!("checking systemd version");
 
-        debug!("running `{} --version`", &bootctl.display());
-        let output = Command::new(&bootctl).arg("--version").output()?.stdout;
+        let args = &["--version"];
+        debug!("running `{}` with args `{:?}`", &bootctl.display(), args);
+        let output = Command::new(&bootctl).args(args).output()?.stdout;
 
         let version = Self::from_output(&output)?;
 

@@ -47,15 +47,9 @@ impl SystemdBootVersion {
     pub fn detect_version(bootctl: &Path, esp: &Path) -> Result<Option<Self>> {
         trace!("checking bootloader version");
 
-        debug!(
-            "running `{} status --path {}`",
-            &bootctl.display(),
-            &esp.display()
-        );
-        let output = Command::new(&bootctl)
-            .args(&["status", "--path", &esp.display().to_string()])
-            .output()?
-            .stdout;
+        let args = &["status", "--path", &esp.display().to_string()];
+        debug!("running `{}` with args `{:?}`", &bootctl.display(), &args);
+        let output = Command::new(&bootctl).args(args).output()?.stdout;
 
         let version = Self::from_output(&output)?;
 
