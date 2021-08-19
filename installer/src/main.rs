@@ -2,7 +2,6 @@
 
 // NOTE: profile names might have invalid characters? https://github.com/NixOS/nixpkgs/pull/114637
 // TODO: maybe make the installer use the generator directly? e.g. don't write to files, write to a HashMap<String, String>, which maps the file path to its contents
-
 use std::error::Error;
 use std::io::Write;
 use std::path::PathBuf;
@@ -49,7 +48,7 @@ pub(crate) type Result<T, E = Box<dyn Error + Send + Sync + 'static>> = core::re
 fn main() -> Result<()> {
     std::env::set_var("RUST_BACKTRACE", "1");
 
-    let args = self::parse_args().unwrap();
+    let args = self::parse_args()?;
 
     env_logger::Builder::new()
         .format(|buf, record| writeln!(buf, "{:<5} {}", record.level(), record.args()))
@@ -67,7 +66,7 @@ fn main() -> Result<()> {
     // TODO: choose which bootloader to install to somehow
     // (for now, hardcoded to systemd_boot for dogfood purposes)
     // TODO: better error handling (eyre? something with backtraces, preferably...)
-    systemd_boot::install(args).unwrap();
+    systemd_boot::install(args)?;
 
     Ok(())
 }
