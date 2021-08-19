@@ -71,7 +71,7 @@ pub fn store_path_to_filename(path: PathBuf) -> Result<OsString> {
         return Err("provided path wasn't a Nix store path".into());
     }
 
-    let s = s.replace("/nix/store/", "").replace("/", "") + ".efi";
+    let s = s.replace("/nix/store/", "").replace("/", "-") + ".efi";
 
     Ok(s.into())
 }
