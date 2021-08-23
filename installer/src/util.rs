@@ -3,6 +3,7 @@ use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
+use log::{debug, trace};
 use regex::Regex;
 
 use crate::Result;
@@ -22,6 +23,29 @@ pub struct Generation {
     pub conf_filename: OsString,
     pub kernel_filename: OsString,
     pub initrd_filename: OsString,
+}
+
+pub fn wanted_generations(
+    generations: Vec<Generation>,
+    configuration_limit: Option<usize>,
+) -> Vec<Generation> {
+    trace!("getting list of generations");
+
+    let generations_len = generations.len();
+    debug!("generations_len: {}", generations_len);
+
+    let generations = if let Some(limit) = configuration_limit {
+        debug!("limiting generations to max of {}", limit);
+
+        generations
+            .into_iter()
+            .skip(generations_len.saturating_sub(limit))
+            .collect::<Vec<_>>()
+    } else {
+        generations
+    };
+
+    generations
 }
 
 pub fn all_generations(profile: Option<String>) -> Result<Vec<Generation>> {
@@ -196,4 +220,56 @@ where
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Generation;
+    use std::ffi::OsString;
+
+    #[test]
+    fn test_wanted_generations() {
+        let gens = [
+            vec![
+                Generation {
+                    idx: 1,
+                    profile: None,
+                    conf_filename: OsString::from("nixos-generation-1.conf"),
+                    ..Default::default()
+                },
+                Generation {
+                    idx: 2,
+                    profile: None,
+                    conf_filename: OsString::from("nixos-generation-2.conf"),
+                    ..Default::default()
+                },
+            ],
+            vec![
+                Generation {
+                    idx: 1,
+                    profile: Some(String::from("test")),
+                    conf_filename: OsString::from("nixos-test-generation-1.conf"),
+                    ..Default::default()
+                },
+                Generation {
+                    idx: 2,
+                    profile: Some(String::from("test")),
+                    conf_filename: OsString::from("nixos-test-generation-2.conf"),
+                    ..Default::default()
+                },
+            ],
+        ];
+
+        for generations in gens {
+            let ret_generations = super::wanted_generations(generations.clone(), None);
+            assert_eq!(ret_generations.len(), 2);
+            assert_eq!(ret_generations[0], generations[0]);
+            assert_eq!(ret_generations[1], generations[1]);
+
+            let ret_generations = super::wanted_generations(generations.clone(), Some(1));
+            assert_eq!(ret_generations.len(), 1);
+            assert_eq!(ret_generations[0], generations[1]);
+            assert_eq!(ret_generations.get(1), None);
+        }
+    }
 }

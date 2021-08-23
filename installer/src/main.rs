@@ -35,7 +35,7 @@ struct Args {
     install: bool,
 
     // EFI-specific arguments
-    /// The path to the EFI System Partition
+    /// The path to the EFI System Partition(s)
     esp: Vec<PathBuf>,
     /// Whether or not to touch EFI vars in the NVRAM
     can_touch_efi_vars: bool,
