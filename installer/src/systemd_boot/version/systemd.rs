@@ -9,7 +9,7 @@ use regex::Regex;
 use super::systemd_boot::SystemdBootVersion;
 use crate::Result;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct SystemdVersion {
     pub version: usize,
 }

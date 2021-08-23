@@ -7,7 +7,9 @@ use std::path::Path;
 use log::{debug, trace, warn};
 use regex::Regex;
 
-use crate::util::Generation;
+use crate::systemd_boot::version::systemd::SystemdVersion;
+use crate::systemd_boot::version::systemd_boot::SystemdBootVersion;
+use crate::util::{self, Generation};
 use crate::{Args, Result};
 
 mod plan;
@@ -18,22 +20,46 @@ lazy_static::lazy_static! {
 }
 
 pub(crate) fn install(args: Args) -> Result<()> {
-    trace!("beginning systemd_boot install process");
-
-    // FIXME: support dry run
-    // TODO: make a function (macro_rules! macro?) that accepts the potentially-destructive action and a message to log?
-    let dry_run = args.dry_run;
-    debug!("dry_run? {}", dry_run);
+    trace!("beginning systemd-boot install process");
+    debug!("dry_run? {}", args.dry_run);
 
     if args.esp.is_empty() {
         return Err("No ESP(s) specified; exiting.".into());
     }
 
     let esps = &args.esp;
-    for esp in esps {
-        let plan = plan::create_plan(&args, esp)?;
+    let bootctl = args.bootctl.as_ref().expect("bootctl was missing");
+    let systemd_version = SystemdVersion::detect_version(bootctl)?;
+    let system_generations = util::all_generations(None)?;
+    let wanted_generations = util::wanted_generations(system_generations, args.configuration_limit);
+    let default_generation = wanted_generations
+        .iter()
+        .rev()
+        .find(|generation| {
+            fs::canonicalize(&generation.path).ok() == fs::canonicalize(&args.toplevel).ok()
+        })
+        .ok_or("couldn't find generation that corresponds to the provided toplevel")?;
 
-        if dry_run {
+    for esp in esps {
+        let bootloader_version = match SystemdBootVersion::detect_version(bootctl, esp) {
+            Ok(v) => Some(v),
+            Err(_) if args.install => None,
+            Err(e) => {
+                return Err(e);
+            }
+        };
+
+        let plan = plan::create_plan(
+            &args,
+            bootctl,
+            esp,
+            bootloader_version,
+            systemd_version,
+            &wanted_generations,
+            default_generation,
+        )?;
+
+        if args.dry_run {
             writeln!(std::io::stdout(), "{:#?}", plan)?;
         } else {
             plan::consume_plan(plan)?;
@@ -67,39 +93,16 @@ pub(crate) fn create_loader_conf(
     Ok(s)
 }
 
-pub(crate) fn wanted_generations(
-    generations: Vec<Generation>,
-    configuration_limit: Option<usize>,
-) -> Vec<Generation> {
-    trace!("getting list of generations");
-
-    let generations_len = generations.len();
-    debug!("generations_len: {}", generations_len);
-
-    let generations = if let Some(limit) = configuration_limit {
-        debug!("limiting generations to max of {}", limit);
-
-        generations
-            .into_iter()
-            .skip(generations_len.saturating_sub(limit))
-            .collect::<Vec<_>>()
-    } else {
-        generations
-    };
-
-    generations
-}
-
-pub(crate) fn get_required_file_paths(generations: Vec<Generation>) -> Result<Vec<OsString>> {
-    let mut known_paths = Vec::new();
+pub(crate) fn get_required_filenames(generations: Vec<Generation>) -> Vec<OsString> {
+    let mut required_filenames = Vec::new();
 
     for generation in generations {
-        known_paths.push(generation.conf_filename);
-        known_paths.push(generation.kernel_filename);
-        known_paths.push(generation.initrd_filename);
+        required_filenames.push(generation.conf_filename);
+        required_filenames.push(generation.kernel_filename);
+        required_filenames.push(generation.initrd_filename);
     }
 
-    Ok(known_paths)
+    required_filenames
 }
 
 // TODO: split into different binary / subcommand?
@@ -120,8 +123,8 @@ fn remove_old_files(generations: &[Generation], path: &Path) -> Result<()> {
         return Ok(());
     }
 
-    debug!("calculating required file paths");
-    let required_file_paths = self::get_required_file_paths(generations.to_vec())?;
+    debug!("calculating required filenames");
+    let required_filenames = self::get_required_filenames(generations.to_vec());
 
     debug!("removing old entries");
     for entry in fs::read_dir(loader_entries)? {
@@ -133,7 +136,7 @@ fn remove_old_files(generations: &[Generation], path: &Path) -> Result<()> {
             continue;
         }
 
-        if !required_file_paths.iter().any(|e| e == name) {
+        if !required_filenames.iter().any(|e| e == name) {
             fs::remove_file(f)?;
         }
     }
@@ -143,7 +146,7 @@ fn remove_old_files(generations: &[Generation], path: &Path) -> Result<()> {
         let f = entry?.path();
         let name = f.file_name().ok_or("filename terminated in ..")?;
 
-        if !required_file_paths.iter().any(|e| e == name) {
+        if !required_filenames.iter().any(|e| e == name) {
             fs::remove_file(f)?;
         }
     }
@@ -176,52 +179,6 @@ console-mode max
     }
 
     #[test]
-    fn test_wanted_generations() {
-        let gens = [
-            vec![
-                Generation {
-                    idx: 1,
-                    profile: None,
-                    conf_filename: OsString::from("nixos-generation-1.conf"),
-                    ..Default::default()
-                },
-                Generation {
-                    idx: 2,
-                    profile: None,
-                    conf_filename: OsString::from("nixos-generation-2.conf"),
-                    ..Default::default()
-                },
-            ],
-            vec![
-                Generation {
-                    idx: 1,
-                    profile: Some(String::from("test")),
-                    conf_filename: OsString::from("nixos-test-generation-1.conf"),
-                    ..Default::default()
-                },
-                Generation {
-                    idx: 2,
-                    profile: Some(String::from("test")),
-                    conf_filename: OsString::from("nixos-test-generation-2.conf"),
-                    ..Default::default()
-                },
-            ],
-        ];
-
-        for generations in gens {
-            let ret_generations = super::wanted_generations(generations.clone(), None);
-            assert_eq!(ret_generations.len(), 2);
-            assert_eq!(ret_generations[0], generations[0]);
-            assert_eq!(ret_generations[1], generations[1]);
-
-            let ret_generations = super::wanted_generations(generations.clone(), Some(1));
-            assert_eq!(ret_generations.len(), 1);
-            assert_eq!(ret_generations[0], generations[1]);
-            assert_eq!(ret_generations.get(1), None);
-        }
-    }
-
-    #[test]
     fn test_get_known_filenames() {
         let generations = vec![
             Generation {
@@ -242,12 +199,12 @@ console-mode max
             },
         ];
 
-        let known_filenames = super::get_required_file_paths(generations.clone()).unwrap();
+        let required_filenames = super::get_required_filenames(generations.clone());
 
         for gen in generations {
-            assert!(known_filenames.iter().any(|e| e == &gen.conf_filename));
-            assert!(known_filenames.iter().any(|e| e == &gen.kernel_filename));
-            assert!(known_filenames.iter().any(|e| e == &gen.initrd_filename));
+            assert!(required_filenames.iter().any(|e| e == &gen.conf_filename));
+            assert!(required_filenames.iter().any(|e| e == &gen.kernel_filename));
+            assert!(required_filenames.iter().any(|e| e == &gen.initrd_filename));
         }
     }
 }

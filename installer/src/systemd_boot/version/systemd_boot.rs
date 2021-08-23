@@ -9,7 +9,7 @@ use regex::RegexBuilder;
 use super::systemd::SystemdVersion;
 use crate::Result;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct SystemdBootVersion {
     pub version: usize,
 }
@@ -19,7 +19,7 @@ impl SystemdBootVersion {
         Self { version }
     }
 
-    fn from_output(output: &[u8]) -> Result<Option<Self>> {
+    fn from_output(output: &[u8]) -> Result<Self> {
         trace!("parsing `bootctl status` output");
 
         let output = str::from_utf8(output)?;
@@ -35,23 +35,32 @@ impl SystemdBootVersion {
             .build()?;
         let caps = re.captures(output);
 
-        let version = caps.and_then(|caps| {
-            caps.name("version")
-                .and_then(|cap| cap.as_str().parse::<usize>().ok())
-                .map(Self::new)
-        });
+        let version = caps
+            .and_then(|caps| {
+                caps.name("version")
+                    .and_then(|cap| cap.as_str().parse::<usize>().ok())
+                    .map(Self::new)
+            })
+            .ok_or("couldn't get systemd-boot version")?;
 
         Ok(version)
     }
 
-    pub fn detect_version(bootctl: &Path, esp: &Path) -> Result<Option<Self>> {
+    pub fn detect_version(bootctl: &Path, esp: &Path) -> Result<Self> {
         trace!("checking bootloader version");
 
         let args = &["status", "--path", &esp.display().to_string()];
         debug!("running `{}` with args `{:?}`", &bootctl.display(), &args);
         let output = Command::new(&bootctl).args(args).output()?.stdout;
 
-        let version = Self::from_output(&output)?;
+        let version = match Self::from_output(&output) {
+            Ok(v) => v,
+            Err(e) => {
+                return Err(
+                    format!("{}: is systemd-boot installed on '{}'?", e, &esp.display()).into(),
+                );
+            }
+        };
 
         Ok(version)
     }
@@ -102,7 +111,7 @@ mod tests {
                 "         File: └─/EFI/systemd/systemd-bootx64.efi (systemd-boot 247)".as_bytes()
             )
             .unwrap(),
-            Some(SystemdBootVersion::new(247))
+            SystemdBootVersion::new(247)
         );
         assert_eq!(
             SystemdBootVersion::from_output(
@@ -159,8 +168,8 @@ Default Boot Loader Entry:
                 .as_bytes()
             )
             .unwrap(),
-            Some(SystemdBootVersion::new(247))
+            SystemdBootVersion::new(247)
         );
-        assert_eq!(SystemdBootVersion::from_output(b"").unwrap(), None);
+        assert!(SystemdBootVersion::from_output(b"").is_err());
     }
 }

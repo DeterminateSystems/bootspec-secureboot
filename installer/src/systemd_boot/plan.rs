@@ -5,14 +5,14 @@ use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use log::{debug, error, info, trace, warn};
+use log::{debug, error, info, trace};
 
 use super::version::systemd::SystemdVersion;
 use super::version::systemd_boot::SystemdBootVersion;
 use crate::util::{self, Generation};
 use crate::{Args, Result};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) enum SystemdBootPlanState<'a> {
     Start, // transition to install or update based on args.install
     Install {
@@ -22,13 +22,13 @@ pub(crate) enum SystemdBootPlanState<'a> {
         can_touch_efi_vars: bool,
     },
     Update {
-        bootloader_version: Option<SystemdBootVersion>,
+        bootloader_version: SystemdBootVersion,
         systemd_version: SystemdVersion,
         bootctl: &'a Path,
         esp: &'a Path,
     },
     Prune {
-        wanted_generations: Vec<Generation>,
+        wanted_generations: &'a [Generation],
         paths: Vec<&'a Path>,
     },
     WriteLoader {
@@ -51,26 +51,30 @@ pub(crate) enum SystemdBootPlanState<'a> {
 
 type SystemdBootPlan<'a> = Vec<SystemdBootPlanState<'a>>;
 
-pub(crate) fn create_plan<'a>(args: &'a Args, esp: &'a Path) -> Result<SystemdBootPlan<'a>> {
+pub(crate) fn create_plan<'a>(
+    args: &'a Args,
+    bootctl: &'a Path,
+    esp: &'a Path,
+    bootloader_version: Option<SystemdBootVersion>,
+    systemd_version: SystemdVersion,
+    wanted_generations: &'a [Generation],
+    default_generation: &'a Generation,
+) -> Result<SystemdBootPlan<'a>> {
     let mut plan = vec![SystemdBootPlanState::Start];
 
-    // systemd_boot requires the path to bootctl be provided, so it's safe to unwrap (until I make
-    // this a subcommand and remove the Option wrapper altogether)
-    let bootctl = args.bootctl.as_ref().expect("bootctl was missing");
-    let loader = esp.join("loader/loader.conf");
-
     if args.install {
-        let loader = if loader.exists() { Some(loader) } else { None };
+        let loader = esp.join("loader/loader.conf");
 
         plan.push(SystemdBootPlanState::Install {
-            loader,
+            loader: if loader.exists() { Some(loader) } else { None },
             bootctl,
             esp,
             can_touch_efi_vars: args.can_touch_efi_vars,
         });
     } else {
-        let bootloader_version = SystemdBootVersion::detect_version(bootctl, esp)?;
-        let systemd_version = SystemdVersion::detect_version(bootctl)?;
+        // We require a bootloader_version when updating (the default operation), so this is safe to unwrap.
+        let bootloader_version =
+            bootloader_version.expect("bootloader version was None, but we're updating");
 
         plan.push(SystemdBootPlanState::Update {
             bootloader_version,
@@ -80,42 +84,27 @@ pub(crate) fn create_plan<'a>(args: &'a Args, esp: &'a Path) -> Result<SystemdBo
         });
     }
 
-    let system_generations = util::all_generations(None)?;
-    let wanted_generations =
-        super::wanted_generations(system_generations, args.configuration_limit);
-
     // Remove old things from both the generated entries and ESP
     // - Generated entries because we don't need to waste space on copying unused kernels / initrds / entries
     // - ESP so that we don't have unbootable entries
     plan.push(SystemdBootPlanState::Prune {
-        wanted_generations: wanted_generations.clone(),
+        wanted_generations,
         paths: vec![&args.generated_entries, esp],
     });
 
-    // Reverse the iterator because it's more likely that the generation being switched to is
-    // "newer", thus will be at the end of the generated list of generations
-    debug!("finding default boot entry by comparing store paths");
-    for generation in wanted_generations.iter().rev() {
-        if fs::canonicalize(&generation.path)? == fs::canonicalize(&args.toplevel)? {
-            plan.push(SystemdBootPlanState::WriteLoader {
-                path: args.generated_entries.join("loader/loader.conf"),
-                timeout: args.timeout,
-                index: generation.idx,
-                editor: args.editor,
-                console_mode: &args.console_mode,
-            });
-
-            break;
-        }
-    }
+    plan.push(SystemdBootPlanState::WriteLoader {
+        path: args.generated_entries.join("loader/loader.conf"),
+        timeout: args.timeout,
+        index: default_generation.idx,
+        editor: args.editor,
+        console_mode: &args.console_mode,
+    });
 
     plan.push(SystemdBootPlanState::CopyToEsp {
         generated_entries: &args.generated_entries,
         esp,
     });
 
-    // If there's not enough space for everything, this will error out while copying files, before
-    // anything is overwritten via renaming.
     plan.push(SystemdBootPlanState::Syncfs { esp });
 
     plan.push(SystemdBootPlanState::End);
@@ -161,7 +150,7 @@ pub(crate) fn consume_plan(plan: SystemdBootPlan) -> Result<()> {
                         &path.display()
                     );
 
-                    super::remove_old_files(&wanted_generations, path)?;
+                    super::remove_old_files(wanted_generations, path)?;
                 }
             }
             WriteLoader {
@@ -186,6 +175,9 @@ pub(crate) fn consume_plan(plan: SystemdBootPlan) -> Result<()> {
                 esp,
             } => {
                 trace!("copying everything to the esp");
+
+                // If there's not enough space for everything, this will error out while copying files, before
+                // anything is overwritten via renaming.
                 util::atomic_tmp_copy(generated_entries, esp)?;
             }
             Syncfs { esp } => {
@@ -229,24 +221,20 @@ fn run_install(
 }
 
 fn run_update(
-    bootloader_version: Option<SystemdBootVersion>,
+    bootloader_version: SystemdBootVersion,
     systemd_version: SystemdVersion,
     bootctl: &Path,
     esp: &Path,
 ) -> Result<()> {
-    if let Some(bootloader_version) = bootloader_version {
-        if bootloader_version < systemd_version {
-            info!(
-                "updating systemd-boot from {} to {}",
-                bootloader_version.version, systemd_version.version
-            );
+    if bootloader_version < systemd_version {
+        info!(
+            "updating systemd-boot from {} to {}",
+            bootloader_version.version, systemd_version.version
+        );
 
-            let args = &["update", "--path", &esp.display().to_string()];
-            debug!("running `{}` with args `{:?}`", &bootctl.display(), &args);
-            Command::new(&bootctl).args(args).status()?;
-        }
-    } else {
-        warn!("could not find any previously installed systemd-boot");
+        let args = &["update", "--path", &esp.display().to_string()];
+        debug!("running `{}` with args `{:?}`", &bootctl.display(), &args);
+        Command::new(&bootctl).args(args).status()?;
     }
 
     Ok(())
@@ -269,4 +257,176 @@ fn syncfs(esp: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::OsString;
+
+    fn scaffold(install: bool) -> (Args, Vec<Generation>, Generation) {
+        let args = Args {
+            toplevel: PathBuf::from("toplevel"),
+            dry_run: false,
+            generated_entries: PathBuf::from("generated_entries"),
+            timeout: Some(1),
+            console_mode: String::from("max"),
+            configuration_limit: Some(1),
+            editor: false,
+            verbosity: 0,
+            install,
+            esp: vec![PathBuf::from("esp")],
+            can_touch_efi_vars: false,
+            bootctl: Some(PathBuf::from("bootctl")),
+        };
+        let system_generations = vec![
+            Generation {
+                idx: 1,
+                profile: None,
+                path: PathBuf::from("1"),
+                conf_filename: OsString::from("nixos-generation-1.conf"),
+                kernel_filename: OsString::from("abcd-linux-5.12.9-bzImage.efi"),
+                initrd_filename: OsString::from("abcd-initrd-linux-5.12.9-initrd.efi"),
+            },
+            Generation {
+                idx: 2,
+                profile: None,
+                path: PathBuf::from("2"),
+                conf_filename: OsString::from("nixos-generation-2.conf"),
+                kernel_filename: OsString::from("abcd-linux-5.12.9-bzImage.efi"),
+                initrd_filename: OsString::from("abcd-initrd-linux-5.12.9-initrd.efi"),
+            },
+        ];
+        let wanted_generations =
+            util::wanted_generations(system_generations, args.configuration_limit);
+        let default_generation = Generation {
+            idx: 2,
+            profile: None,
+            path: PathBuf::from("2"),
+            conf_filename: OsString::from("nixos-generation-2.conf"),
+            kernel_filename: OsString::from("abcd-linux-5.12.9-bzImage.efi"),
+            initrd_filename: OsString::from("abcd-initrd-linux-5.12.9-initrd.efi"),
+        };
+
+        (args, wanted_generations, default_generation)
+    }
+
+    #[test]
+    fn test_update_plan() {
+        let (args, wanted_generations, default_generation) = scaffold(false);
+        let systemd_version = SystemdVersion::new(247);
+        let bootloader_version = SystemdBootVersion::new(246);
+        let bootctl = args.bootctl.as_ref().unwrap();
+        let esp = &args.esp[0];
+
+        let plan = create_plan(
+            &args,
+            bootctl,
+            esp,
+            Some(bootloader_version),
+            systemd_version,
+            &wanted_generations,
+            &default_generation,
+        )
+        .unwrap();
+        dbg!(&plan);
+        let mut iter = plan.into_iter();
+
+        assert_eq!(iter.next().unwrap(), SystemdBootPlanState::Start);
+        assert_eq!(
+            iter.next().unwrap(),
+            SystemdBootPlanState::Update {
+                bootloader_version: SystemdBootVersion::new(246),
+                systemd_version: SystemdVersion::new(247),
+                bootctl,
+                esp,
+            }
+        );
+        assert_eq!(
+            iter.next().unwrap(),
+            SystemdBootPlanState::Prune {
+                wanted_generations: &wanted_generations,
+                paths: vec![&args.generated_entries, esp],
+            }
+        );
+        assert_eq!(
+            iter.next().unwrap(),
+            SystemdBootPlanState::WriteLoader {
+                path: args.generated_entries.join("loader/loader.conf"),
+                timeout: args.timeout,
+                index: default_generation.idx,
+                editor: args.editor,
+                console_mode: &args.console_mode,
+            }
+        );
+        assert_eq!(
+            iter.next().unwrap(),
+            SystemdBootPlanState::CopyToEsp {
+                generated_entries: &args.generated_entries,
+                esp,
+            }
+        );
+        assert_eq!(iter.next().unwrap(), SystemdBootPlanState::Syncfs { esp });
+        assert_eq!(iter.next().unwrap(), SystemdBootPlanState::End);
+        assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn test_install_plan() {
+        let (args, wanted_generations, default_generation) = scaffold(true);
+        let systemd_version = SystemdVersion::new(247);
+        let bootctl = args.bootctl.as_ref().unwrap();
+        let esp = &args.esp[0];
+
+        let plan = create_plan(
+            &args,
+            bootctl,
+            esp,
+            None,
+            systemd_version,
+            &wanted_generations,
+            &default_generation,
+        )
+        .unwrap();
+        dbg!(&plan);
+        let mut iter = plan.into_iter();
+
+        assert_eq!(iter.next().unwrap(), SystemdBootPlanState::Start);
+        assert_eq!(
+            iter.next().unwrap(),
+            SystemdBootPlanState::Install {
+                loader: None,
+                bootctl,
+                esp,
+                can_touch_efi_vars: args.can_touch_efi_vars,
+            }
+        );
+        assert_eq!(
+            iter.next().unwrap(),
+            SystemdBootPlanState::Prune {
+                wanted_generations: &wanted_generations,
+                paths: vec![&args.generated_entries, esp],
+            }
+        );
+        assert_eq!(
+            iter.next().unwrap(),
+            SystemdBootPlanState::WriteLoader {
+                path: args.generated_entries.join("loader/loader.conf"),
+                timeout: args.timeout,
+                index: default_generation.idx,
+                editor: args.editor,
+                console_mode: &args.console_mode,
+            }
+        );
+        assert_eq!(
+            iter.next().unwrap(),
+            SystemdBootPlanState::CopyToEsp {
+                generated_entries: &args.generated_entries,
+                esp,
+            }
+        );
+        assert_eq!(iter.next().unwrap(), SystemdBootPlanState::Syncfs { esp });
+        assert_eq!(iter.next().unwrap(), SystemdBootPlanState::End);
+        assert_eq!(iter.next(), None);
+    }
 }
