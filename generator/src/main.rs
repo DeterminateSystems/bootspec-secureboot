@@ -18,46 +18,85 @@
 
 // boot.loader.manual.enable = true; <- stubs out the `installBootloader` script to say "OK, update your bootloader now!\n  {path to bootspec.json}"
 
-use std::env;
-use std::fs;
-use std::io::Write;
-use std::os::unix;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use generator::{grub, systemd_boot};
+use generator::grub;
+use generator::systemd_boot::{self, SigningInfo};
+use generator::Result;
 
-fn main() {
-    env::set_var("RUST_BACKTRACE", "1");
+#[derive(Default, Debug)]
+struct Args {
     // TODO: --out-dir?
-    // if len(args) < 2, quit
-    // this will eventually accept a list of profiles / generations with which to generate bootloader configs
-    let generations = env::args().skip(1);
-    // basically [/nix/var/nix/profiles/system-69-link, /nix/var/nix/profiles/system-70-link, ...]
+    /// TODO
+    signing_info: Option<SigningInfo>,
+    /// TODO
+    generations: Vec<String>,
+}
 
-    for generation in generations {
+fn main() -> Result<()> {
+    let args = self::parse_args()?;
+
+    if args.generations.is_empty() {
+        return Err("expected list of generations".into());
+    }
+
+    for generation in &args.generations {
         if generation.is_empty() {
             continue;
         }
 
-        let (i, profile) = generator::parse_generation(&generation);
+        let (i, profile) = generator::parse_generation(generation)?;
         let generation_path = PathBuf::from(&generation);
-        let json = generator::get_json(generation_path);
+        let json = generator::get_json(&generation_path)?;
 
-        for (path, contents) in systemd_boot::entry(&json, i, &profile).unwrap() {
-            fs::create_dir_all(format!("{}/efi/nixos", systemd_boot::ROOT)).unwrap();
-            fs::create_dir_all(format!("{}/loader/entries", systemd_boot::ROOT)).unwrap();
-            let mut f = fs::File::create(path).unwrap();
-            write!(f, "{}", contents.conf).unwrap();
+        let signing_info = &args.signing_info;
 
-            if !Path::new(&contents.kernel.1).exists() {
-                unix::fs::symlink(contents.kernel.0, contents.kernel.1).unwrap();
-            }
-
-            if !Path::new(&contents.initrd.1).exists() {
-                unix::fs::symlink(contents.initrd.0, contents.initrd.1).unwrap();
-            }
-        }
+        systemd_boot::generate(&json, i, &profile, &generation_path, signing_info)?;
 
         grub::entry(&json, i, &profile).unwrap();
     }
+
+    Ok(())
+}
+
+fn parse_args() -> Result<Args> {
+    let mut pico = pico_args::Arguments::from_env();
+
+    if pico.contains(["-h", "--help"]) {
+        // TODO: help
+        // print!("{}", HELP);
+        std::process::exit(0);
+    }
+
+    let signing_key: Option<PathBuf> = pico.opt_value_from_str("--signing-key")?;
+    let signing_cert: Option<PathBuf> = pico.opt_value_from_str("--signing-cert")?;
+    let objcopy: Option<PathBuf> = pico.opt_value_from_os_str("--objcopy", self::parse_path)?;
+    let sbsign: Option<PathBuf> = pico.opt_value_from_os_str("--sbsign", self::parse_path)?;
+    let signing_info = match (signing_key, signing_cert, objcopy, sbsign) {
+        (None, None, None, None) => None,
+        (Some(signing_key), Some(signing_cert), Some(objcopy), Some(sbsign)) => Some(SigningInfo {
+            signing_key,
+            signing_cert,
+            objcopy,
+            sbsign,
+        }),
+        _ => {
+            return Err("--signing-key, --signing-cert, --objcopy, and --sbsign are all required when signing for SecureBoot".into());
+        }
+    };
+
+    let args = Args {
+        signing_info,
+        generations: pico
+            .finish()
+            .into_iter()
+            .map(|s| s.into_string().expect("invalid utf8 in generation"))
+            .collect(),
+    };
+
+    Ok(args)
+}
+
+fn parse_path(s: &std::ffi::OsStr) -> Result<PathBuf> {
+    Ok(s.into())
 }

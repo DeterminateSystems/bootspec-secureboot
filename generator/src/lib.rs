@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -10,39 +10,39 @@ pub mod grub;
 pub mod systemd_boot;
 
 #[derive(Debug, Default, Deserialize, Serialize, PartialEq, Eq, Hash)]
-struct SpecialisationName(String);
+pub struct SpecialisationName(pub String);
 #[derive(Debug, Default, Deserialize, Serialize)]
-struct SystemConfigurationRoot(PathBuf);
+pub struct SystemConfigurationRoot(pub PathBuf);
 #[derive(Debug, Default, Deserialize, Serialize)]
-struct BootJsonPath(PathBuf);
+pub struct BootJsonPath(pub PathBuf);
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BootJsonV1 {
     /// The version of the boot.json schema
-    schema_version: usize,
+    pub schema_version: usize,
     /// NixOS version
-    system_version: String,
+    pub system_version: String,
     /// Path to kernel (bzImage) -- $toplevel/kernel
-    kernel: PathBuf,
+    pub kernel: PathBuf,
     /// Kernel version
-    kernel_version: String,
+    pub kernel_version: String,
     /// list of kernel parameters
-    kernel_params: Vec<String>,
+    pub kernel_params: Vec<String>,
     /// Path to the init script
-    init: PathBuf,
+    pub init: PathBuf,
     /// Path to initrd -- $toplevel/initrd
-    initrd: PathBuf,
+    pub initrd: PathBuf,
     /// Path to "append-initrd-secrets" script -- $toplevel/append-initrd-secrets
-    initrd_secrets: PathBuf,
+    pub initrd_secrets: PathBuf,
     /// Mapping of specialisation names to their configuration's boot.json -- to add all specialisations as a boot entry
-    specialisation: HashMap<SpecialisationName, BootJsonPath>,
+    pub specialisation: HashMap<SpecialisationName, BootJsonPath>,
     /// config.system.build.toplevel path
-    toplevel: SystemConfigurationRoot,
+    pub toplevel: SystemConfigurationRoot,
 }
 
 pub type BootJson = BootJsonV1;
-pub(crate) type Result<T, E = Box<dyn Error + Send + Sync + 'static>> = core::result::Result<T, E>;
+pub type Result<T, E = Box<dyn Error + Send + Sync + 'static>> = core::result::Result<T, E>;
 
 pub const SCHEMA_VERSION: usize = 1;
 pub const JSON_FILENAME: &str = "boot.v1.json";
@@ -52,37 +52,39 @@ lazy_static::lazy_static! {
     static ref PROFILE_RE: Regex = Regex::new("/system-profiles/(?P<profile>[^-]+)-(?P<generation>\\d+)-link").unwrap();
 }
 
-pub fn get_json(generation_path: PathBuf) -> BootJson {
+pub fn get_json(generation_path: &Path) -> Result<BootJson> {
     let json_path = generation_path.join(JSON_FILENAME);
     let json: BootJson = if json_path.exists() {
-        let contents = fs::read_to_string(&json_path).unwrap();
-        serde_json::from_str(&contents).unwrap()
+        let contents = fs::read_to_string(&json_path)?;
+        serde_json::from_str(&contents)?
     } else {
-        synthesize_schema_from_generation(generation_path).unwrap()
+        self::synthesize_schema_from_generation(generation_path)?
     };
 
-    json
+    Ok(json)
 }
 
-pub fn parse_generation(generation: &str) -> (usize, Option<String>) {
-    if PROFILE_RE.is_match(&generation) {
-        let caps = PROFILE_RE.captures(&generation).unwrap();
-        let i = caps["generation"].parse::<usize>().unwrap();
+pub fn parse_generation(generation: &str) -> Result<(usize, Option<String>)> {
+    let ret = if PROFILE_RE.is_match(generation) {
+        let caps = PROFILE_RE.captures(generation).unwrap();
+        let i = caps["generation"].parse::<usize>()?;
 
         (i, Some(caps["profile"].to_string()))
-    } else if SYSTEM_RE.is_match(&generation) {
-        let caps = SYSTEM_RE.captures(&generation).unwrap();
-        let i = caps["generation"].parse::<usize>().unwrap();
+    } else if SYSTEM_RE.is_match(generation) {
+        let caps = SYSTEM_RE.captures(generation).unwrap();
+        let i = caps["generation"].parse::<usize>()?;
 
         (i, None)
     } else {
         // TODO: for now, this is just for testing; could this be feasibly hit in real-world use?
         // maybe check all generations of ever profile to see if their realpath matches?
         (0, None)
-    }
+    };
+
+    Ok(ret)
 }
 
-pub fn synthesize_schema_from_generation(generation: PathBuf) -> Result<BootJson> {
+pub fn synthesize_schema_from_generation(generation: &Path) -> Result<BootJson> {
     let generation = generation.canonicalize()?;
 
     let system_version = fs::read_to_string(generation.join("nixos-version"))?;

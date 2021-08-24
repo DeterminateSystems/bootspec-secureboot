@@ -20,6 +20,7 @@ pub struct Generation {
     pub idx: usize,
     pub profile: Option<String>,
     pub path: PathBuf,
+    // TODO: collect "required files" into a vec
     pub conf_filename: OsString,
     pub kernel_filename: OsString,
     pub initrd_filename: OsString,

@@ -1,154 +1,135 @@
-use std::collections::HashMap;
-use std::fs;
-use std::os::unix::fs::MetadataExt;
+use std::fs::{self, File};
+use std::io::Write;
+use std::os::unix;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use chrono::{Local, TimeZone};
-
 use crate::{BootJson, Result};
+
+mod entry;
+pub use entry::entry;
 
 // FIXME: placeholder dir
 pub const ROOT: &str = "systemd-boot-entries";
 
-/// A mapping of file paths to file contents
-pub type Entries = HashMap<String, Contents>;
-
-#[derive(Default, Debug)]
-pub struct StorePath(PathBuf);
-#[derive(Default, Debug)]
-pub struct EspPath(String);
-
-#[derive(Default, Debug)]
-pub struct Contents {
-    /// The contents of the generation conf file.
-    pub conf: String,
-    /// A tuple of the kernel's store path and destination path (inside the ESP)
-    pub kernel: (PathBuf, String),
-    /// A tuple of the initrd's store path and destination path (inside the ESP)
-    pub initrd: (PathBuf, String),
+#[derive(Debug)]
+pub struct SigningInfo {
+    pub signing_key: PathBuf,
+    pub signing_cert: PathBuf,
+    pub objcopy: PathBuf,
+    pub sbsign: PathBuf,
 }
 
-pub fn entry(json: &BootJson, generation: usize, profile: &Option<String>) -> Result<Entries> {
-    entry_impl(json, generation, profile, None)
-}
-
-fn entry_impl(
+pub fn generate(
     json: &BootJson,
     generation: usize,
     profile: &Option<String>,
-    specialisation: Option<&str>,
-) -> Result<Entries> {
-    let machine_id = get_machine_id();
-    let linux = format!(
-        "/efi/nixos/{}.efi",
-        json.kernel
-            .display()
-            .to_string()
-            .replace("/nix/store/", "")
-            .replace("/", "-")
-    );
-    let initrd = format!(
-        "/efi/nixos/{}.efi",
-        json.initrd
-            .display()
-            .to_string()
-            .replace("/nix/store/", "")
-            .replace("/", "-")
-    );
+    generation_path: &Path,
+    signing_info: &Option<SigningInfo>,
+) -> Result<()> {
+    for (path, contents) in entry::entry(json, generation, profile, signing_info.is_some())? {
+        let efi_nixos = format!("{}/efi/nixos", self::ROOT);
+        let loader_entries = format!("{}/loader/entries", self::ROOT);
+        fs::create_dir_all(&efi_nixos)?;
+        fs::create_dir_all(&loader_entries)?;
 
-    let ctime = fs::metadata(&json.toplevel.0)?.ctime();
-    let date = Local.timestamp(ctime, 0).format("%Y-%m-%d");
-    let description = format!(
-        "NixOS {system_version}{specialisation}, Linux Kernel {kernel_version}, Built on {date}",
-        specialisation = if let Some(specialisation) = specialisation {
-            format!(", Specialisation {}", specialisation)
+        let mut f = File::create(&path)?;
+        write!(f, "{}", contents.conf)?;
+
+        if let Some(signing_info) = signing_info {
+            // 1. create unified kernel
+            // 2. sign `f`
+            // 3. sign unified kernel, move to proper location
+            let kernel_param_file = format!("{}/kernel_params-{}", self::ROOT, generation);
+            let mut kernel_param = File::create(&kernel_param_file)?;
+            write!(
+                kernel_param,
+                "init={} {}",
+                json.init.display(),
+                json.kernel_params.join(" ")
+            )?;
+
+            self::create_unified_kernel(
+                &signing_info.objcopy,
+                generation_path,
+                &kernel_param_file,
+                &contents.unified_dest,
+            )?;
+            fs::remove_file(&kernel_param_file)?;
+
+            self::sign_file(
+                &signing_info.sbsign,
+                &signing_info.signing_key,
+                &signing_info.signing_cert,
+                &contents.unified_dest,
+            )?;
         } else {
-            format!("")
-        },
-        system_version = json.system_version,
-        kernel_version = json.kernel_version,
-        date = date,
-    );
+            if !Path::new(&contents.kernel_dest).exists() {
+                unix::fs::symlink(contents.kernel_src, contents.kernel_dest)?;
+            }
 
-    // The newline at the end of the format string is to ensure that all entries
-    // are byte-identical -- before this, running `diff -r /boot/loader/entries
-    // [output-dir]/loader/entries` would report missing newlines in the
-    // generated entries.
-    let data = format!(
-        r#"title NixOS
-version Generation {generation} {description}
-linux {linux}
-initrd {initrd}
-options init={init} {params}
-machine-id {machine_id}
-
-"#,
-        generation = generation,
-        description = description,
-        linux = linux,
-        initrd = initrd,
-        init = json.init.display(),
-        params = json.kernel_params.join(" "),
-        machine_id = machine_id,
-    );
-
-    let entries_dir = format!("{}/loader/entries", ROOT);
-    let infix = if let Some(profile) = profile {
-        format!("-{}", profile)
-    } else {
-        String::new()
-    };
-    let conf_path = if let Some(specialisation) = specialisation {
-        // TODO: the specialisation in filename is required (or it conflicts with other entries), does this mess up sorting?
-        format!(
-            "{}/nixos{}-generation-{}-{}.conf",
-            &entries_dir, infix, generation, specialisation
-        )
-    } else {
-        format!(
-            "{}/nixos{}-generation-{}.conf",
-            &entries_dir, infix, generation
-        )
-    };
-
-    let kernel_dest = format!("{}/{}", ROOT, linux);
-    let initrd_dest = format!("{}/{}", ROOT, initrd);
-
-    let mut entries = Entries::new();
-    entries.insert(
-        conf_path,
-        Contents {
-            conf: data,
-            kernel: (json.kernel.clone(), kernel_dest),
-            initrd: (json.initrd.clone(), initrd_dest),
-        },
-    );
-
-    for (name, path) in &json.specialisation {
-        let json = fs::read_to_string(&path.0)?;
-        let parsed: BootJson = serde_json::from_str(&json)?;
-
-        entries.extend(entry_impl(&parsed, generation, profile, Some(&name.0))?);
+            if !Path::new(&contents.initrd_dest).exists() {
+                unix::fs::symlink(contents.initrd_src, contents.initrd_dest)?;
+            }
+        }
     }
 
-    Ok(entries)
+    Ok(())
 }
 
-fn get_machine_id() -> String {
-    let machine_id = if Path::new("/etc/machine-id").exists() {
-        fs::read_to_string("/etc/machine-id").expect("error reading machine-id")
-    } else {
-        // FIXME: systemd-machine-id-setup should be interpolated / substituted
-        String::from_utf8(
-            Command::new("systemd-machine-id-setup")
-                .arg("--print")
-                .output()
-                .expect("failed to execute systemd-machine-id-setup")
-                .stdout,
-        )
-        .expect("found invalid UTF-8")
-    };
+fn create_unified_kernel(
+    objcopy: &Path,
+    generation_path: &Path,
+    kernel_params: &str,
+    unified_kernel_dest: &str,
+) -> Result<()> {
+    // TODO: use `object` crate instead of calling objcopy?
+    // FIXME: (in the future) check that offsets won't overlap; error if they will
+    //   - if kernel size is "close" to 16MiB, move initrd offset to 0x4000000
 
-    machine_id.trim().to_string()
+    // Offsets taken from one of systemd's EFI tests:
+    // https://github.com/systemd/systemd/blob/01d0123f044d6c090b6ac2f6d304de2bdb19ae3b/test/test-efi-create-disk.sh#L32-L38
+    Command::new(objcopy)
+        .args(&[
+            "--add-section",
+            &format!(".osrel={}/etc/os-release", generation_path.display()),
+            "--change-section-vma",
+            ".osrel=0x20000",
+            "--add-section",
+            &format!(".cmdline={}", kernel_params),
+            "--change-section-vma",
+            ".cmdline=0x30000",
+            "--add-section",
+            &format!(".linux={}/kernel", generation_path.display()),
+            "--change-section-vma",
+            ".linux=0x2000000",
+            "--add-section",
+            &format!(".initrd={}/initrd", generation_path.display()),
+            "--change-section-vma",
+            ".initrd=0x3000000",
+            &format!(
+                "{}/sw/lib/systemd/boot/efi/linuxx64.efi.stub",
+                generation_path.display()
+            ),
+            unified_kernel_dest,
+        ])
+        .status()?;
+
+    Ok(())
+}
+
+fn sign_file(sbsign: &Path, key: &Path, cert: &Path, file: &str) -> Result<()> {
+    Command::new(sbsign)
+        .args(&[
+            "--key",
+            &key.display().to_string(),
+            "--cert",
+            &cert.display().to_string(),
+            "--output",
+            file,
+            file,
+        ])
+        .status()?;
+
+    Ok(())
 }

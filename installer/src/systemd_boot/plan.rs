@@ -38,6 +38,12 @@ pub(crate) enum SystemdBootPlanState<'a> {
         editor: bool,
         console_mode: &'a str,
     },
+    #[allow(dead_code)]
+    SecureBoot {
+        signing_key: PathBuf,
+        signing_cert: PathBuf,
+        // TODO
+    },
     // TODO: "Hook" phase here?
     CopyToEsp {
         generated_entries: &'a Path,
@@ -169,6 +175,17 @@ pub(crate) fn consume_plan(plan: SystemdBootPlan) -> Result<()> {
                 let contents = super::create_loader_conf(timeout, index, editor, console_mode)?;
 
                 f.write_all(contents.as_bytes())?;
+            }
+            SecureBoot {
+                signing_key,
+                signing_cert,
+                // TODO
+            } => {
+                let _ = (signing_cert, signing_key);
+
+                /*
+                TODO: needs integration with the generator
+                */
             }
             CopyToEsp {
                 generated_entries,
