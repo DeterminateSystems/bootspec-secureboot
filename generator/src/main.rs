@@ -68,10 +68,10 @@ fn parse_args() -> Result<Args> {
         std::process::exit(0);
     }
 
-    let signing_key: Option<PathBuf> = pico.opt_value_from_str("--signing-key")?;
-    let signing_cert: Option<PathBuf> = pico.opt_value_from_str("--signing-cert")?;
-    let objcopy: Option<PathBuf> = pico.opt_value_from_os_str("--objcopy", self::parse_path)?;
-    let sbsign: Option<PathBuf> = pico.opt_value_from_os_str("--sbsign", self::parse_path)?;
+    let signing_key = pico.opt_value_from_os_str("--signing-key", self::parse_path)?;
+    let signing_cert = pico.opt_value_from_os_str("--signing-cert", self::parse_path)?;
+    let objcopy = pico.opt_value_from_os_str("--objcopy", self::parse_path)?;
+    let sbsign = pico.opt_value_from_os_str("--sbsign", self::parse_path)?;
     let signing_info = match (signing_key, signing_cert, objcopy, sbsign) {
         (None, None, None, None) => None,
         (Some(signing_key), Some(signing_cert), Some(objcopy), Some(sbsign)) => Some(SigningInfo {
