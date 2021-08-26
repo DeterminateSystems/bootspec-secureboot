@@ -87,9 +87,9 @@ fn parse_args() -> Result<Args> {
     }
 
     let args = Args {
-        toplevel: pico.value_from_fn("--toplevel", self::parse_path)?,
+        toplevel: pico.value_from_os_str("--toplevel", self::parse_path)?,
         dry_run: pico.contains("--dry-run"),
-        generated_entries: pico.value_from_fn("--generated-entries", self::parse_path)?,
+        generated_entries: pico.value_from_os_str("--generated-entries", self::parse_path)?,
         timeout: pico.opt_value_from_str("--timeout")?,
         console_mode: pico.value_from_str("--console-mode")?,
         configuration_limit: pico.opt_value_from_str("--configuration-limit")?,
@@ -98,9 +98,9 @@ fn parse_args() -> Result<Args> {
         install: pico.contains("--install"),
 
         // EFI-specific
-        esp: pico.values_from_fn("--esp", self::parse_path)?,
+        esp: pico.values_from_os_str("--esp", self::parse_path)?,
         can_touch_efi_vars: pico.contains("--touch-efi-vars"),
-        bootctl: pico.opt_value_from_fn("--bootctl", self::parse_path)?,
+        bootctl: pico.opt_value_from_os_str("--bootctl", self::parse_path)?,
     };
 
     dbg!(&args);
@@ -108,6 +108,6 @@ fn parse_args() -> Result<Args> {
     Ok(args)
 }
 
-fn parse_path(s: &str) -> Result<PathBuf> {
+fn parse_path(s: &std::ffi::OsStr) -> Result<PathBuf> {
     Ok(s.into())
 }
