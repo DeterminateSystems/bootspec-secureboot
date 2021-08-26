@@ -51,6 +51,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "lazy_static",
+ "pico-args",
  "regex",
  "serde",
  "serde_json",

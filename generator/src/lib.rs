@@ -9,12 +9,12 @@ use serde::{Deserialize, Serialize};
 pub mod grub;
 pub mod systemd_boot;
 
-#[derive(Debug, Default, Deserialize, Serialize, PartialEq, Eq, Hash)]
-struct SpecialisationName(String);
-#[derive(Debug, Default, Deserialize, Serialize)]
-struct SystemConfigurationRoot(PathBuf);
-#[derive(Debug, Default, Deserialize, Serialize)]
-struct BootJsonPath(PathBuf);
+#[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
+pub struct SpecialisationName(pub String);
+#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+pub struct SystemConfigurationRoot(pub PathBuf);
+#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+pub struct BootJsonPath(pub PathBuf);
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,7 +42,7 @@ pub struct BootJsonV1 {
 }
 
 pub type BootJson = BootJsonV1;
-pub(crate) type Result<T, E = Box<dyn Error + Send + Sync + 'static>> = core::result::Result<T, E>;
+pub type Result<T, E = Box<dyn Error + Send + Sync + 'static>> = core::result::Result<T, E>;
 
 pub const SCHEMA_VERSION: usize = 1;
 pub const JSON_FILENAME: &str = "boot.v1.json";
