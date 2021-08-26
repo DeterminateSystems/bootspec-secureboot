@@ -18,49 +18,56 @@
 
 // boot.loader.manual.enable = true; <- stubs out the `installBootloader` script to say "OK, update your bootloader now!\n  {path to bootspec.json}"
 
-use std::fs;
-use std::io::Write;
-use std::os::unix;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use generator::{grub, systemd_boot, Result};
+use generator::bootable::{self, Bootable, EfiProgram, Generation};
+use generator::{systemd_boot, Result};
 
 #[derive(Default, Debug)]
 struct Args {
     // TODO: --out-dir?
-    /// TODO
+    // FIXME: path to systemd-boot efi stub
+    /// The `objcopy` binary
+    ///
+    /// Required if `--unified-efi` is provided
+    objcopy: Option<PathBuf>,
+    /// Whether or not to combine the initrd and kernel into a unified EFI file
+    unified_efi: bool,
+    /// A list of generations in the form of `/nix/var/nix/profiles/system-*-link`
     generations: Vec<String>,
 }
 
 fn main() -> Result<()> {
     let args = self::parse_args()?;
 
-    for generation in args.generations {
-        if generation.is_empty() {
-            continue;
-        }
+    let generations = args
+        .generations
+        .into_iter()
+        .filter(|gen| generator::parse_generation(gen).is_ok())
+        .map(|gen| {
+            let (index, profile) = generator::parse_generation(&gen).unwrap();
 
-        let (i, profile) = generator::parse_generation(&generation);
-        let generation_path = PathBuf::from(&generation);
-        let json = generator::get_json(generation_path);
-
-        for (path, contents) in systemd_boot::entry(&json, i, &profile)? {
-            fs::create_dir_all(format!("{}/efi/nixos", systemd_boot::ROOT))?;
-            fs::create_dir_all(format!("{}/loader/entries", systemd_boot::ROOT))?;
-            let mut f = fs::File::create(path)?;
-            write!(f, "{}", contents.conf)?;
-
-            if !Path::new(&contents.kernel.1).exists() {
-                unix::fs::symlink(contents.kernel.0, contents.kernel.1)?;
+            Generation {
+                index,
+                profile,
+                json: generator::get_json(PathBuf::from(gen)),
             }
+        })
+        .collect::<Vec<_>>();
+    let toplevels = bootable::flatten(generations, None)?;
+    let bootables: Vec<Bootable> = if args.unified_efi {
+        toplevels
+            .into_iter()
+            .map(|toplevel| Bootable::Efi(EfiProgram::new(toplevel)))
+            .collect()
+    } else {
+        toplevels.into_iter().map(Bootable::Linux).collect()
+    };
 
-            if !Path::new(&contents.initrd.1).exists() {
-                unix::fs::symlink(contents.initrd.0, contents.initrd.1)?;
-            }
-        }
+    systemd_boot::generate(bootables, args.objcopy)?;
 
-        grub::entry(&json, i, &profile)?;
-    }
+    // TODO: grub
+    // grub::generate(bootables, args.objcopy)?;
 
     Ok(())
 }
@@ -75,6 +82,8 @@ fn parse_args() -> Result<Args> {
     }
 
     let args = Args {
+        objcopy: pico.opt_value_from_os_str("--objcopy", self::parse_path)?,
+        unified_efi: pico.contains("--unified-efi"),
         generations: pico
             .finish()
             .into_iter()
@@ -82,5 +91,20 @@ fn parse_args() -> Result<Args> {
             .collect(),
     };
 
+    match (&args.objcopy, &args.unified_efi) {
+        (None, false) => {}
+        (Some(_), true) => {}
+        _ => {
+            return Err(
+                "--objcopy and --unified-efi are required when one or the other is specified"
+                    .into(),
+            );
+        }
+    }
+
     Ok(args)
+}
+
+fn parse_path(s: &std::ffi::OsStr) -> Result<PathBuf> {
+    Ok(s.into())
 }

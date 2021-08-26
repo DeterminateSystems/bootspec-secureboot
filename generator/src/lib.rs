@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
+pub mod bootable;
 pub mod grub;
 pub mod systemd_boot;
 
@@ -64,21 +65,19 @@ pub fn get_json(generation_path: PathBuf) -> BootJson {
     json
 }
 
-pub fn parse_generation(generation: &str) -> (usize, Option<String>) {
-    if PROFILE_RE.is_match(&generation) {
-        let caps = PROFILE_RE.captures(&generation).unwrap();
-        let i = caps["generation"].parse::<usize>().unwrap();
+pub fn parse_generation(generation: &str) -> Result<(usize, Option<String>)> {
+    if PROFILE_RE.is_match(generation) {
+        let caps = PROFILE_RE.captures(generation).unwrap();
+        let i = caps["generation"].parse::<usize>()?;
 
-        (i, Some(caps["profile"].to_string()))
-    } else if SYSTEM_RE.is_match(&generation) {
-        let caps = SYSTEM_RE.captures(&generation).unwrap();
-        let i = caps["generation"].parse::<usize>().unwrap();
+        Ok((i, Some(caps["profile"].to_string())))
+    } else if SYSTEM_RE.is_match(generation) {
+        let caps = SYSTEM_RE.captures(generation).unwrap();
+        let i = caps["generation"].parse::<usize>()?;
 
-        (i, None)
+        Ok((i, None))
     } else {
-        // TODO: for now, this is just for testing; could this be feasibly hit in real-world use?
-        // maybe check all generations of ever profile to see if their realpath matches?
-        (0, None)
+        Err("generation wasn't a system or profile generation".into())
     }
 }
 
