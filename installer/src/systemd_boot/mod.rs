@@ -93,13 +93,11 @@ pub(crate) fn create_loader_conf(
     Ok(s)
 }
 
-pub(crate) fn get_required_filenames(generations: Vec<Generation>) -> Vec<OsString> {
+fn get_required_filenames(generations: Vec<Generation>) -> Vec<OsString> {
     let mut required_filenames = Vec::new();
 
     for generation in generations {
-        required_filenames.push(generation.conf_filename);
-        required_filenames.push(generation.kernel_filename);
-        required_filenames.push(generation.initrd_filename);
+        required_filenames.extend(generation.required_filenames);
     }
 
     required_filenames
@@ -184,17 +182,21 @@ console-mode max
             Generation {
                 idx: 1,
                 profile: None,
-                conf_filename: OsString::from("nixos-generation-1.conf"),
-                kernel_filename: OsString::from("kernel-1"),
-                initrd_filename: OsString::from("initrd-1"),
+                required_filenames: vec![
+                    OsString::from("nixos-generation-1.conf"),
+                    OsString::from("kernel-1"),
+                    OsString::from("initrd-1"),
+                ],
                 ..Default::default()
             },
             Generation {
                 idx: 2,
                 profile: None,
-                conf_filename: OsString::from("nixos-generation-2.conf"),
-                kernel_filename: OsString::from("kernel-2"),
-                initrd_filename: OsString::from("initrd-2"),
+                required_filenames: vec![
+                    OsString::from("nixos-generation-2.conf"),
+                    OsString::from("kernel-2"),
+                    OsString::from("initrd-2"),
+                ],
                 ..Default::default()
             },
         ];
@@ -202,9 +204,18 @@ console-mode max
         let required_filenames = super::get_required_filenames(generations.clone());
 
         for gen in generations {
-            assert!(required_filenames.iter().any(|e| e == &gen.conf_filename));
-            assert!(required_filenames.iter().any(|e| e == &gen.kernel_filename));
-            assert!(required_filenames.iter().any(|e| e == &gen.initrd_filename));
+            assert!(gen
+                .required_filenames
+                .iter()
+                .any(|e| required_filenames.contains(e)));
+            assert!(gen
+                .required_filenames
+                .iter()
+                .any(|e| required_filenames.contains(e)));
+            assert!(gen
+                .required_filenames
+                .iter()
+                .any(|e| required_filenames.contains(e)));
         }
     }
 }

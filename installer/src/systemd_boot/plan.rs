@@ -284,17 +284,21 @@ mod tests {
                 idx: 1,
                 profile: None,
                 path: PathBuf::from("1"),
-                conf_filename: OsString::from("nixos-generation-1.conf"),
-                kernel_filename: OsString::from("abcd-linux-5.12.9-bzImage.efi"),
-                initrd_filename: OsString::from("abcd-initrd-linux-5.12.9-initrd.efi"),
+                required_filenames: vec![
+                    OsString::from("nixos-generation-1.conf"),
+                    OsString::from("abcd-linux-5.12.9-bzImage.efi"),
+                    OsString::from("abcd-initrd-linux-5.12.9-initrd.efi"),
+                ],
             },
             Generation {
                 idx: 2,
                 profile: None,
                 path: PathBuf::from("2"),
-                conf_filename: OsString::from("nixos-generation-2.conf"),
-                kernel_filename: OsString::from("abcd-linux-5.12.9-bzImage.efi"),
-                initrd_filename: OsString::from("abcd-initrd-linux-5.12.9-initrd.efi"),
+                required_filenames: vec![
+                    OsString::from("nixos-generation-2.conf"),
+                    OsString::from("abcd-linux-5.12.9-bzImage.efi"),
+                    OsString::from("abcd-initrd-linux-5.12.9-initrd.efi"),
+                ],
             },
         ];
         let wanted_generations =
@@ -303,9 +307,11 @@ mod tests {
             idx: 2,
             profile: None,
             path: PathBuf::from("2"),
-            conf_filename: OsString::from("nixos-generation-2.conf"),
-            kernel_filename: OsString::from("abcd-linux-5.12.9-bzImage.efi"),
-            initrd_filename: OsString::from("abcd-initrd-linux-5.12.9-initrd.efi"),
+            required_filenames: vec![
+                OsString::from("nixos-generation-2.conf"),
+                OsString::from("abcd-linux-5.12.9-bzImage.efi"),
+                OsString::from("abcd-initrd-linux-5.12.9-initrd.efi"),
+            ],
         };
 
         (args, wanted_generations, default_generation)
