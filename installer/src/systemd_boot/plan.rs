@@ -1,16 +1,21 @@
-use std::ffi::CStr;
+use std::ffi::{CStr, OsStr};
 use std::fs::{self, File};
 use std::io::Write as _;
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
+use crc::{Crc, CRC_32_ISCSI};
 use log::{debug, error, info, trace};
 
 use super::version::systemd::SystemdVersion;
 use super::version::systemd_boot::SystemdBootVersion;
+use crate::files::{FileToReplace, IdentifiedFiles};
+use crate::secure_boot::SigningInfo;
 use crate::util::{self, Generation};
 use crate::{Args, Result};
+
+const CASTAGNOLI: Crc<u32> = Crc::<u32>::new(&CRC_32_ISCSI);
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum SystemdBootPlanState<'a> {
@@ -27,7 +32,7 @@ pub(crate) enum SystemdBootPlanState<'a> {
         bootctl: &'a Path,
         esp: &'a Path,
     },
-    Prune {
+    PruneFiles {
         wanted_generations: &'a [Generation],
         paths: Vec<&'a Path>,
     },
@@ -37,6 +42,14 @@ pub(crate) enum SystemdBootPlanState<'a> {
         index: usize,
         editor: bool,
         console_mode: &'a str,
+    },
+    ReplaceFiles {
+        signing_info: &'a Option<SigningInfo>,
+        to_replace: Vec<FileToReplace>,
+    },
+    SignFiles {
+        signing_info: &'a SigningInfo,
+        to_sign: Vec<PathBuf>,
     },
     // TODO: "Hook" phase here?
     CopyToEsp {
@@ -87,10 +100,28 @@ pub(crate) fn create_plan<'a>(
     // Remove old things from both the generated entries and ESP
     // - Generated entries because we don't need to waste space on copying unused kernels / initrds / entries
     // - ESP so that we don't have unbootable entries
-    plan.push(SystemdBootPlanState::Prune {
+    plan.push(SystemdBootPlanState::PruneFiles {
         wanted_generations,
         paths: vec![&args.generated_entries, esp],
     });
+
+    let identified_files = IdentifiedFiles::new(&args.generated_entries, esp)?;
+
+    plan.push(SystemdBootPlanState::ReplaceFiles {
+        signing_info: &args.signing_info,
+        to_replace: identified_files.to_replace,
+    });
+
+    if let Some(signing_info) = &args.signing_info {
+        plan.push(SystemdBootPlanState::SignFiles {
+            signing_info,
+            to_sign: identified_files
+                .to_add
+                .into_iter()
+                .filter(|e| e.extension() == Some(OsStr::new("efi")))
+                .collect(),
+        });
+    }
 
     plan.push(SystemdBootPlanState::WriteLoader {
         path: args.generated_entries.join("loader/loader.conf"),
@@ -138,7 +169,7 @@ pub(crate) fn consume_plan(plan: SystemdBootPlan) -> Result<()> {
                 trace!("updating systemd-boot");
                 self::run_update(bootloader_version, systemd_version, bootctl, esp)?;
             }
-            Prune {
+            PruneFiles {
                 wanted_generations,
                 paths,
             } => {
@@ -151,6 +182,26 @@ pub(crate) fn consume_plan(plan: SystemdBootPlan) -> Result<()> {
                     );
 
                     super::remove_old_files(wanted_generations, path)?;
+                }
+            }
+            ReplaceFiles {
+                signing_info,
+                to_replace,
+            } => {
+                trace!("replacing existing files in esp");
+
+                for file in to_replace {
+                    self::replace_file(&file, signing_info)?;
+                }
+            }
+            SignFiles {
+                signing_info,
+                to_sign,
+            } => {
+                trace!("signing efi files");
+
+                for file in to_sign {
+                    signing_info.sign_file(&file)?;
                 }
             }
             WriteLoader {
@@ -179,6 +230,7 @@ pub(crate) fn consume_plan(plan: SystemdBootPlan) -> Result<()> {
                 // If there's not enough space for everything, this will error out while copying files, before
                 // anything is overwritten via renaming.
                 util::atomic_tmp_copy(generated_entries, esp)?;
+                fs::remove_dir_all(&generated_entries)?;
             }
             Syncfs { esp } => {
                 trace!("attempting to syncfs(2) the esp");
@@ -188,6 +240,68 @@ pub(crate) fn consume_plan(plan: SystemdBootPlan) -> Result<()> {
                 trace!("finished updating / installing")
             }
         }
+    }
+
+    Ok(())
+}
+
+fn replace_file(file: &FileToReplace, signing_info: &Option<SigningInfo>) -> Result<()> {
+    let generated_loc = &file.generated_loc;
+    let esp_loc = &file.esp_loc;
+
+    // TODO: does secure boot work when the file doesn't end in efi (e.g. is this invariant upheld by secure boot itself)?
+    let (hash_a, hash_b) =
+        if generated_loc.extension() == Some(OsStr::new("efi")) && signing_info.is_some() {
+            let signing_info = signing_info.as_ref().unwrap();
+            signing_info.verify_file(generated_loc)?;
+            signing_info.verify_file(esp_loc)?;
+
+            let tmp_dir = std::env::temp_dir();
+            let generated_tmp = tmp_dir.join("generated");
+            let esp_tmp = tmp_dir.join("esp");
+
+            fs::copy(&generated_loc, &generated_tmp)?;
+            fs::copy(&esp_loc, &esp_tmp)?;
+
+            let sbattach = env!("PATCHED_SBATTACH_BINARY");
+            Command::new(sbattach)
+                .args(&["--remove", &generated_tmp.display().to_string()])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()?;
+            Command::new(sbattach)
+                .args(&["--remove", &esp_tmp.display().to_string()])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()?;
+
+            let hash_a = CASTAGNOLI.checksum(&fs::read(&generated_tmp)?);
+            let hash_b = CASTAGNOLI.checksum(&fs::read(&esp_tmp)?);
+
+            fs::remove_file(&generated_tmp)?;
+            fs::remove_file(&esp_tmp)?;
+
+            (hash_a, hash_b)
+        } else {
+            let hash_a = CASTAGNOLI.checksum(&fs::read(&generated_loc)?);
+            let hash_b = CASTAGNOLI.checksum(&fs::read(&esp_loc)?);
+
+            (hash_a, hash_b)
+        };
+
+    if hash_a == hash_b {
+        debug!(
+            "{} and {} are the same file",
+            esp_loc.display(),
+            generated_loc.display()
+        );
+        fs::remove_file(&generated_loc)?;
+    } else {
+        info!(
+            "{} is different from {} and will be replaced",
+            esp_loc.display(),
+            generated_loc.display(),
+        );
     }
 
     Ok(())
@@ -278,6 +392,8 @@ mod tests {
             esp: vec![PathBuf::from("esp")],
             can_touch_efi_vars: false,
             bootctl: Some(PathBuf::from("bootctl")),
+            unified_efi: false,
+            signing_info: None,
         };
         let system_generations = vec![
             Generation {
@@ -350,9 +466,16 @@ mod tests {
         );
         assert_eq!(
             iter.next().unwrap(),
-            SystemdBootPlanState::Prune {
+            SystemdBootPlanState::PruneFiles {
                 wanted_generations: &wanted_generations,
                 paths: vec![&args.generated_entries, esp],
+            }
+        );
+        assert_eq!(
+            iter.next().unwrap(),
+            SystemdBootPlanState::ReplaceFiles {
+                signing_info: &None,
+                to_replace: vec![],
             }
         );
         assert_eq!(
@@ -409,9 +532,16 @@ mod tests {
         );
         assert_eq!(
             iter.next().unwrap(),
-            SystemdBootPlanState::Prune {
+            SystemdBootPlanState::PruneFiles {
                 wanted_generations: &wanted_generations,
                 paths: vec![&args.generated_entries, esp],
+            }
+        );
+        assert_eq!(
+            iter.next().unwrap(),
+            SystemdBootPlanState::ReplaceFiles {
+                signing_info: &None,
+                to_replace: vec![],
             }
         );
         assert_eq!(

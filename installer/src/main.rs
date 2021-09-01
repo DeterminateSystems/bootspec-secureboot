@@ -8,7 +8,11 @@ use std::path::PathBuf;
 
 use log::LevelFilter;
 
+use crate::secure_boot::SigningInfo;
+
+mod files;
 mod grub;
+mod secure_boot;
 mod systemd_boot;
 mod util;
 
@@ -41,13 +45,15 @@ struct Args {
     can_touch_efi_vars: bool,
     /// TODO: bootctl path
     bootctl: Option<PathBuf>,
+    /// Whether to use unified EFI files
+    unified_efi: bool,
+    /// The signing info used for Secure Boot
+    signing_info: Option<SigningInfo>,
 }
 
 pub(crate) type Result<T, E = Box<dyn Error + Send + Sync + 'static>> = core::result::Result<T, E>;
 
 fn main() -> Result<()> {
-    std::env::set_var("RUST_BACKTRACE", "1");
-
     let args = self::parse_args()?;
 
     env_logger::Builder::new()
@@ -86,10 +92,30 @@ fn parse_args() -> Result<Args> {
         verbosity += 1;
     }
 
+    let signing_key = pico.opt_value_from_fn("--signing-key", self::parse_path_from_str)?;
+    let signing_cert = pico.opt_value_from_fn("--signing-cert", self::parse_path_from_str)?;
+    let sbsign = pico.opt_value_from_fn("--sbsign", self::parse_path_from_str)?;
+    let sbverify = pico.opt_value_from_fn("--sbverify", self::parse_path_from_str)?;
+
+    let signing_info = match (signing_key, signing_cert, sbsign, sbverify) {
+        (None, None, None, None) => None,
+        (Some(signing_key), Some(signing_cert), Some(sbsign), Some(sbverify)) => {
+            Some(SigningInfo {
+                signing_key,
+                signing_cert,
+                sbsign,
+                sbverify,
+            })
+        }
+        _ => {
+            return Err("--signing-key, --signing-cert, --sbsign, and --sbverify are all required when signing for SecureBoot".into());
+        }
+    };
+
     let args = Args {
-        toplevel: pico.value_from_os_str("--toplevel", self::parse_path)?,
+        toplevel: pico.value_from_fn("--toplevel", self::parse_path_from_str)?,
         dry_run: pico.contains("--dry-run"),
-        generated_entries: pico.value_from_os_str("--generated-entries", self::parse_path)?,
+        generated_entries: pico.value_from_fn("--generated-entries", self::parse_path_from_str)?,
         timeout: pico.opt_value_from_str("--timeout")?,
         console_mode: pico.value_from_str("--console-mode")?,
         configuration_limit: pico.opt_value_from_str("--configuration-limit")?,
@@ -98,9 +124,11 @@ fn parse_args() -> Result<Args> {
         install: pico.contains("--install"),
 
         // EFI-specific
-        esp: pico.values_from_os_str("--esp", self::parse_path)?,
+        esp: pico.values_from_fn("--esp", self::parse_path_from_str)?,
         can_touch_efi_vars: pico.contains("--touch-efi-vars"),
-        bootctl: pico.opt_value_from_os_str("--bootctl", self::parse_path)?,
+        bootctl: pico.opt_value_from_fn("--bootctl", self::parse_path_from_str)?,
+        unified_efi: pico.contains("--unified-efi") || signing_info.is_some(),
+        signing_info,
     };
 
     dbg!(&args);
@@ -108,6 +136,6 @@ fn parse_args() -> Result<Args> {
     Ok(args)
 }
 
-fn parse_path(s: &std::ffi::OsStr) -> Result<PathBuf> {
-    Ok(s.into())
+fn parse_path_from_str(s: &str) -> Result<PathBuf> {
+    Ok(s.trim_end_matches('/').into())
 }

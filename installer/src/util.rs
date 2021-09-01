@@ -16,6 +16,7 @@ lazy_static::lazy_static! {
 }
 
 const STORE_PATH_PREFIX: &str = "/nix/store/";
+const STORE_HASH_LEN: usize = 32;
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Generation {
@@ -48,7 +49,7 @@ pub fn wanted_generations(
     generations
 }
 
-pub fn all_generations(profile: Option<String>) -> Result<Vec<Generation>> {
+pub fn all_generations(profile: Option<String>, unified: bool) -> Result<Vec<Generation>> {
     let mut generations = Vec::new();
     let profile_path = self::profile_path(&profile);
     let pat = format!("{}-*-link", profile_path);
@@ -69,7 +70,15 @@ pub fn all_generations(profile: Option<String>) -> Result<Vec<Generation>> {
             format!("nixos-generation-{}.conf", idx)
         };
 
-        let required_filenames = {
+        let required_filenames = if unified {
+            let path = fs::canonicalize(&path)?;
+            let filename = format!(
+                "{}.efi",
+                &path.display().to_string().replace(STORE_PATH_PREFIX, "")[..STORE_HASH_LEN]
+            );
+
+            vec![filename.into(), conf_filename.into()]
+        } else {
             let kernel_path = fs::canonicalize(path.join("kernel"))?;
             let kernel_filename = self::store_path_to_filename(kernel_path)?;
             let initrd_path = fs::canonicalize(path.join("initrd"))?;

@@ -30,7 +30,7 @@ pub(crate) fn install(args: Args) -> Result<()> {
     let esps = &args.esp;
     let bootctl = args.bootctl.as_ref().expect("bootctl was missing");
     let systemd_version = SystemdVersion::detect_version(bootctl)?;
-    let system_generations = util::all_generations(None)?;
+    let system_generations = util::all_generations(None, args.unified_efi)?;
     let wanted_generations = util::wanted_generations(system_generations, args.configuration_limit);
     let default_generation = wanted_generations
         .iter()
@@ -69,7 +69,7 @@ pub(crate) fn install(args: Args) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn create_loader_conf(
+fn create_loader_conf(
     timeout: Option<usize>,
     idx: usize,
     editor: bool,
