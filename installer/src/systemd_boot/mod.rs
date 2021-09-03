@@ -62,6 +62,9 @@ pub(crate) fn install(args: Args) -> Result<()> {
         if args.dry_run {
             writeln!(std::io::stdout(), "{:#?}", plan)?;
         } else {
+            fs::create_dir_all(esp.join("efi/nixos"))?;
+            fs::create_dir_all(esp.join("loader/entries"))?;
+
             plan::consume_plan(plan)?;
         }
     }
