@@ -78,7 +78,7 @@ impl EfiProgram {
         Self { source }
     }
 
-    pub fn write_unified_efi(&self, objcopy: &Path, outpath: &Path) -> Result<()> {
+    pub fn write_unified_efi(&self, objcopy: &Path, outpath: &Path, stub: &Path) -> Result<()> {
         let generation_path = &self.source.toplevel.0;
         let mut kernel_params_path = PathBuf::from(&outpath);
         kernel_params_path.set_file_name(".kernel_params.tmp");
@@ -111,10 +111,7 @@ impl EfiProgram {
                 &format!(".initrd={}/initrd", generation_path.display()),
                 "--change-section-vma",
                 ".initrd=0x3000000",
-                &format!(
-                    "{}/sw/lib/systemd/boot/efi/linuxx64.efi.stub",
-                    generation_path.display()
-                ),
+                &stub.display().to_string(),
                 &outpath.display().to_string(),
             ])
             .status()?;

@@ -33,7 +33,11 @@ pub struct Contents {
     pub unified_dest: Option<String>,
 }
 
-pub fn generate(bootables: Vec<Bootable>, objcopy: Option<PathBuf>) -> Result<()> {
+pub fn generate(
+    bootables: Vec<Bootable>,
+    objcopy: Option<PathBuf>,
+    systemd_efi_stub: Option<PathBuf>,
+) -> Result<()> {
     let efi_nixos = format!("{}/efi/nixos", self::ROOT);
     let loader_entries = format!("{}/loader/entries", self::ROOT);
     fs::create_dir_all(&efi_nixos)?;
@@ -48,8 +52,9 @@ pub fn generate(bootables: Vec<Bootable>, objcopy: Option<PathBuf>) -> Result<()
 
                 let unified_dest = contents.unified_dest.unwrap();
                 let objcopy = objcopy.as_ref().unwrap();
+                let systemd_efi_stub = systemd_efi_stub.as_ref().unwrap();
 
-                efi.write_unified_efi(objcopy, Path::new(&unified_dest))?;
+                efi.write_unified_efi(objcopy, Path::new(&unified_dest), systemd_efi_stub)?;
             }
             Bootable::Linux(toplevel) => {
                 let (path, contents) = self::linux_entry_impl(&toplevel)?;

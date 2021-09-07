@@ -26,7 +26,8 @@ use generator::{systemd_boot, Result};
 #[derive(Default, Debug)]
 struct Args {
     // TODO: --out-dir?
-    // FIXME: path to systemd-boot efi stub
+    /// The systemd-boot EFI stub used to create a unified EFI file
+    systemd_efi_stub: Option<PathBuf>,
     /// The `objcopy` binary
     ///
     /// Required if `--unified-efi` is provided
@@ -64,7 +65,7 @@ fn main() -> Result<()> {
         toplevels.into_iter().map(Bootable::Linux).collect()
     };
 
-    systemd_boot::generate(bootables, args.objcopy)?;
+    systemd_boot::generate(bootables, args.objcopy, args.systemd_efi_stub)?;
 
     // TODO: grub
     // grub::generate(bootables, args.objcopy)?;
@@ -83,6 +84,7 @@ fn parse_args() -> Result<Args> {
 
     let args = Args {
         objcopy: pico.opt_value_from_os_str("--objcopy", self::parse_path)?,
+        systemd_efi_stub: pico.opt_value_from_os_str("--systemd-efi-stub", self::parse_path)?,
         unified_efi: pico.contains("--unified-efi"),
         generations: pico
             .finish()
@@ -91,12 +93,12 @@ fn parse_args() -> Result<Args> {
             .collect(),
     };
 
-    match (&args.objcopy, &args.unified_efi) {
-        (None, false) => {}
-        (Some(_), true) => {}
+    match (&args.systemd_efi_stub, &args.objcopy, &args.unified_efi) {
+        (None, None, false) => {}
+        (Some(_), Some(_), true) => {}
         _ => {
             return Err(
-                "--objcopy and --unified-efi are required when one or the other is specified"
+                "--systemd-efi-stub, --objcopy, and --unified-efi are required when one or the other is specified"
                     .into(),
             );
         }
