@@ -81,8 +81,8 @@ pub fn generate(
 }
 
 fn efi_entry_impl(efi: &EfiProgram) -> Result<(String, Contents)> {
-    let generation = efi.source.generation;
-    let profile = &efi.source.profile;
+    let generation = efi.source.generation_index;
+    let profile = &efi.source.profile_name;
     let specialisation = &efi.source.specialisation_name;
     let machine_id = self::get_machine_id();
     let unified = format!(
@@ -126,8 +126,8 @@ machine-id {machine_id}
 }
 
 fn linux_entry_impl(toplevel: &BootableToplevel) -> Result<(String, Contents)> {
-    let generation = toplevel.generation;
-    let profile = &toplevel.profile;
+    let generation = toplevel.generation_index;
+    let profile = &toplevel.profile_name;
     let specialisation = &toplevel.specialisation_name;
     let machine_id = self::get_machine_id();
     let linux = format!(

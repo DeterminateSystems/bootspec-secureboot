@@ -20,8 +20,8 @@
 
 use std::path::PathBuf;
 
-use generator::bootable::{self, Bootable, EfiProgram, Generation};
-use generator::{systemd_boot, Result};
+use generator::bootable::{self, Bootable, EfiProgram};
+use generator::{systemd_boot, Generation, Result};
 
 #[derive(Default, Debug)]
 struct Args {
@@ -44,18 +44,17 @@ fn main() -> Result<()> {
     let generations = args
         .generations
         .into_iter()
-        .filter(|gen| generator::parse_generation(gen).is_ok())
-        .map(|gen| {
-            let (index, profile) = generator::parse_generation(&gen).unwrap();
-
-            Generation {
-                index,
-                profile,
-                json: generator::get_json(PathBuf::from(gen)),
-            }
+        .filter_map(|gen| {
+            generator::parse_generation(&gen)
+                .ok()
+                .map(|(index, profile)| Generation {
+                    index,
+                    profile,
+                    bootspec: generator::get_json(PathBuf::from(gen)),
+                })
         })
         .collect::<Vec<_>>();
-    let toplevels = bootable::flatten(generations, None)?;
+    let toplevels = bootable::flatten(generations)?;
     let bootables: Vec<Bootable> = if args.unified_efi {
         toplevels
             .into_iter()

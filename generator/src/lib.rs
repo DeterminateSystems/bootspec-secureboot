@@ -10,6 +10,13 @@ pub mod bootable;
 pub mod grub;
 pub mod systemd_boot;
 
+#[derive(Debug, Default)]
+pub struct Generation {
+    pub index: usize,
+    pub profile: Option<String>,
+    pub bootspec: BootJson,
+}
+
 #[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub struct SpecialisationName(pub String);
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
