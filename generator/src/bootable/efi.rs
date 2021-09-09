@@ -29,7 +29,7 @@ impl EfiProgram {
 
         // Offsets taken from one of systemd's EFI tests:
         // https://github.com/systemd/systemd/blob/01d0123f044d6c090b6ac2f6d304de2bdb19ae3b/test/test-efi-create-disk.sh#L32-L38
-        Command::new(objcopy)
+        let status = Command::new(objcopy)
             .args(&[
                 "--add-section",
                 &format!(".osrel={}/etc/os-release", generation_path.display()),
@@ -51,6 +51,10 @@ impl EfiProgram {
                 &outpath.display().to_string(),
             ])
             .status()?;
+
+        if !status.success() {
+            return Err("failed to write unified efi".into());
+        }
 
         Ok(())
     }

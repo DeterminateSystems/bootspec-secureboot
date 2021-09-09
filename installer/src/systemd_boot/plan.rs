@@ -255,53 +255,68 @@ fn replace_file(file: &FileToReplace, signing_info: &Option<SigningInfo>) -> Res
     let generated_loc = &file.generated_loc;
     let esp_loc = &file.esp_loc;
 
-    // TODO: does secure boot work when the file doesn't end in efi (e.g. is this invariant upheld by secure boot itself)?
-    let (hash_a, hash_b) =
-        if generated_loc.extension() == Some(OsStr::new("efi")) && signing_info.is_some() {
-            let signing_info = signing_info.as_ref().unwrap();
+    let (hash_a, hash_b) = if signing_info.is_some()
+        && generated_loc.extension() == Some(OsStr::new("efi"))
+    {
+        let signing_info = signing_info.as_ref().unwrap();
 
-            // If the signed file in the generated location doesn't validate, something went
-            // horribly wrong and this error *should* be bubbled up.
-            signing_info.verify_file(generated_loc)?;
+        // If the signed file in the generated location doesn't validate, something went
+        // horribly wrong and this error *should* be bubbled up.
+        signing_info.verify_file(generated_loc)?;
 
-            // However, if the signed file in the ESP location doesn't validate, we will be
-            // replacing it with the generated file; just warn the user.
-            if let Err(e) = signing_info.verify_file(esp_loc) {
-                warn!("{}", e);
-            }
+        // However, if the signed file in the ESP location doesn't validate, we will be
+        // replacing it with the generated file; just warn the user.
+        if let Err(e) = signing_info.verify_file(esp_loc) {
+            warn!("{}", e);
+        }
 
-            let tmp_dir = std::env::temp_dir();
-            let generated_tmp = tmp_dir.join("generated");
-            let esp_tmp = tmp_dir.join("esp");
+        let tmp_dir = std::env::temp_dir();
+        let generated_tmp = tmp_dir.join("generated");
+        let esp_tmp = tmp_dir.join("esp");
 
-            fs::copy(&generated_loc, &generated_tmp)?;
-            fs::copy(&esp_loc, &esp_tmp)?;
+        fs::copy(&generated_loc, &generated_tmp)?;
+        fs::copy(&esp_loc, &esp_tmp)?;
 
-            let sbattach = env!("PATCHED_SBATTACH_BINARY");
-            Command::new(sbattach)
-                .args(&["--remove", &generated_tmp.display().to_string()])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()?;
-            Command::new(sbattach)
-                .args(&["--remove", &esp_tmp.display().to_string()])
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status()?;
+        let sbattach = env!("PATCHED_SBATTACH_BINARY");
+        let args = &["--remove", &generated_tmp.display().to_string()];
+        debug!("running `{}` with args `{:?}`", &sbattach, &args);
+        let status = Command::new(sbattach)
+            .args(args)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()?;
+        if !status.success() {
+            return Err(format!(
+                "failed to remove signature from '{}'",
+                generated_tmp.display()
+            )
+            .into());
+        }
 
-            let hash_a = CASTAGNOLI.checksum(&fs::read(&generated_tmp)?);
-            let hash_b = CASTAGNOLI.checksum(&fs::read(&esp_tmp)?);
+        let args = &["--remove", &esp_tmp.display().to_string()];
+        debug!("running `{}` with args `{:?}`", &sbattach, &args);
+        let status = Command::new(sbattach)
+            .args(args)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()?;
+        if !status.success() {
+            return Err(format!("failed to remove signature from '{}'", esp_tmp.display()).into());
+        }
 
-            fs::remove_file(&generated_tmp)?;
-            fs::remove_file(&esp_tmp)?;
+        let hash_a = CASTAGNOLI.checksum(&fs::read(&generated_tmp)?);
+        let hash_b = CASTAGNOLI.checksum(&fs::read(&esp_tmp)?);
 
-            (hash_a, hash_b)
-        } else {
-            let hash_a = CASTAGNOLI.checksum(&fs::read(&generated_loc)?);
-            let hash_b = CASTAGNOLI.checksum(&fs::read(&esp_loc)?);
+        fs::remove_file(&generated_tmp)?;
+        fs::remove_file(&esp_tmp)?;
 
-            (hash_a, hash_b)
-        };
+        (hash_a, hash_b)
+    } else {
+        let hash_a = CASTAGNOLI.checksum(&fs::read(&generated_loc)?);
+        let hash_b = CASTAGNOLI.checksum(&fs::read(&esp_loc)?);
+
+        (hash_a, hash_b)
+    };
 
     if hash_a == hash_b {
         debug!(
@@ -343,7 +358,16 @@ fn run_install(
         },
     ];
     debug!("running `{}` with args `{:?}`", &bootctl.display(), &args);
-    Command::new(&bootctl).args(args).status()?;
+    let status = Command::new(&bootctl).args(args).status()?;
+
+    if !status.success() {
+        return Err(format!(
+            "failed to run `{}` with args `{:?}`",
+            &bootctl.display(),
+            &args
+        )
+        .into());
+    }
 
     Ok(())
 }
@@ -362,7 +386,16 @@ fn run_update(
 
         let args = &["update", "--path", &esp.display().to_string()];
         debug!("running `{}` with args `{:?}`", &bootctl.display(), &args);
-        Command::new(&bootctl).args(args).status()?;
+        let status = Command::new(&bootctl).args(args).status()?;
+
+        if !status.success() {
+            return Err(format!(
+                "failed to run `{}` with args `{:?}`",
+                &bootctl.display(),
+                &args
+            )
+            .into());
+        }
     }
 
     Ok(())
