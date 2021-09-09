@@ -16,6 +16,10 @@ struct Args {
     /// Whether or not to combine the initrd and kernel into a unified EFI file
     #[structopt(long, requires_all = &["systemd-efi-stub", "objcopy"])]
     unified_efi: bool,
+    /// The `systemd-machine-id-setup` binary
+    // TODO: maybe just pass in machine_id as an arg; if empty, omit from configuration?
+    #[structopt(long)]
+    systemd_machine_id_setup: PathBuf,
     /// A list of generations in the form of `/nix/var/nix/profiles/system-*-link`
     #[structopt(required = true)]
     generations: Vec<String>,
@@ -47,7 +51,12 @@ fn main() -> Result<()> {
         toplevels.into_iter().map(Bootable::Linux).collect()
     };
 
-    systemd_boot::generate(bootables, args.objcopy, args.systemd_efi_stub)?;
+    systemd_boot::generate(
+        bootables,
+        args.objcopy,
+        args.systemd_efi_stub,
+        args.systemd_machine_id_setup,
+    )?;
 
     // TODO: grub
     // grub::generate(bootables, args.objcopy)?;

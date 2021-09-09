@@ -37,7 +37,9 @@ pub fn generate(
     bootables: Vec<Bootable>,
     objcopy: Option<PathBuf>,
     systemd_efi_stub: Option<PathBuf>,
+    systemd_machine_id_setup: PathBuf,
 ) -> Result<()> {
+    let machine_id = self::get_machine_id(&systemd_machine_id_setup)?;
     let efi_nixos = format!("{}/efi/nixos", self::ROOT);
     let loader_entries = format!("{}/loader/entries", self::ROOT);
     fs::create_dir_all(&efi_nixos)?;
@@ -46,7 +48,7 @@ pub fn generate(
     for bootable in bootables {
         match bootable {
             Bootable::Efi(efi) => {
-                let (path, contents) = self::efi_entry_impl(&efi)?;
+                let (path, contents) = self::efi_entry_impl(&efi, &machine_id)?;
                 let mut f = File::create(path)?;
                 write!(f, "{}", contents.conf)?;
 
@@ -57,7 +59,7 @@ pub fn generate(
                 efi.write_unified_efi(objcopy, Path::new(&unified_dest), systemd_efi_stub)?;
             }
             Bootable::Linux(toplevel) => {
-                let (path, contents) = self::linux_entry_impl(&toplevel)?;
+                let (path, contents) = self::linux_entry_impl(&toplevel, &machine_id)?;
                 let mut f = File::create(path)?;
                 write!(f, "{}", contents.conf)?;
 
@@ -80,11 +82,10 @@ pub fn generate(
     Ok(())
 }
 
-fn efi_entry_impl(efi: &EfiProgram) -> Result<(String, Contents)> {
+fn efi_entry_impl(efi: &EfiProgram, machine_id: &str) -> Result<(String, Contents)> {
     let generation = efi.source.generation_index;
     let profile = &efi.source.profile_name;
     let specialisation = &efi.source.specialisation_name;
-    let machine_id = self::get_machine_id();
     let unified = format!(
         "/efi/nixos/{}.efi",
         &efi.source
@@ -125,11 +126,10 @@ machine-id {machine_id}
     Ok(entry)
 }
 
-fn linux_entry_impl(toplevel: &BootableToplevel) -> Result<(String, Contents)> {
+fn linux_entry_impl(toplevel: &BootableToplevel, machine_id: &str) -> Result<(String, Contents)> {
     let generation = toplevel.generation_index;
     let profile = &toplevel.profile_name;
     let specialisation = &toplevel.specialisation_name;
-    let machine_id = self::get_machine_id();
     let linux = format!(
         "/efi/nixos/{}.efi",
         toplevel
@@ -215,20 +215,24 @@ fn conf_path(
     conf_path
 }
 
-fn get_machine_id() -> String {
+fn get_machine_id(systemd_machine_id_setup: &Path) -> Result<String> {
     let machine_id = if Path::new("/etc/machine-id").exists() {
-        fs::read_to_string("/etc/machine-id").expect("error reading machine-id")
+        fs::read_to_string("/etc/machine-id")?
     } else {
-        // FIXME: systemd-machine-id-setup should be interpolated / substituted
-        String::from_utf8(
-            Command::new("systemd-machine-id-setup")
-                .arg("--print")
-                .output()
-                .expect("failed to execute systemd-machine-id-setup")
-                .stdout,
-        )
-        .expect("found invalid UTF-8")
+        let output = Command::new(systemd_machine_id_setup)
+            .arg("--print")
+            .output()?;
+
+        if !output.status.success() {
+            return Err(format!(
+                "execution of `{} --print` failed",
+                systemd_machine_id_setup.display()
+            )
+            .into());
+        }
+
+        String::from_utf8(output.stdout)?
     };
 
-    machine_id.trim().to_string()
+    Ok(machine_id.trim().to_string())
 }
