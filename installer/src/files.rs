@@ -15,8 +15,6 @@ pub struct FileToReplace {
 
 #[derive(Debug, Clone)]
 pub struct IdentifiedFiles {
-    // FIXME: it's not necessary to track which files should be added, because the `generated_entries` directory gets copied wholesale on installation
-    pub to_add: Vec<PathBuf>,
     pub to_sign: Vec<PathBuf>,
     pub to_replace: Vec<FileToReplace>,
 }
@@ -66,14 +64,12 @@ impl IdentifiedFiles {
         }
 
         let to_sign = to_add
-            .iter()
-            .chain(to_replace.iter().map(|e| &e.generated_loc))
+            .into_iter()
+            .chain(to_replace.iter().map(|e| e.generated_loc.to_owned()))
             .filter(|e| e.extension() == Some(OsStr::new("efi")))
-            .map(ToOwned::to_owned)
             .collect();
 
         Ok(IdentifiedFiles {
-            to_add,
             to_sign,
             to_replace,
         })

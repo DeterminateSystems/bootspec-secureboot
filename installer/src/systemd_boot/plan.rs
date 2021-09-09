@@ -480,12 +480,6 @@ mod tests {
             ],
         };
         let identified_files = IdentifiedFiles {
-            to_add: vec![
-                PathBuf::from("nixos-generation-1.conf"),
-                PathBuf::from("nixos-generation-2.conf"),
-                PathBuf::from("abcd-linux-5.12.9-bzImage.efi"),
-                PathBuf::from("abcd-initrd-linux-5.12.9-initrd.efi"),
-            ],
             to_sign: vec![
                 PathBuf::from("abcd-linux-5.12.9-bzImage.efi"),
                 PathBuf::from("abcd-initrd-linux-5.12.9-initrd.efi"),
