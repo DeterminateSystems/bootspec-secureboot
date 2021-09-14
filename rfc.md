@@ -23,13 +23,13 @@ Why are we doing this? What use cases does it support? What is the expected
 outcome?
 -->
 
-In Nixpkgs / NixOS, there exist various bootloader tools (such as those used for managing systemd-boot and grub), each utilizing varying amounts of information about the generation. As it is now, bootloader tools spelunk the filesystem in order to infer necessary information, such as the kernel version or where the initrd is located. By creating a baseline document that contains this information in a machine-parsable format, these tools can instead rely on the generation's description of itself.
+In Nixpkgs / NixOS, there exist various bootloader tools (such as those used for managing systemd-boot and grub), each utilizing varying amounts of information about the generation. As it is now, bootloader tools may spelunk the filesystem in order to infer necessary information, such as the kernel version or where the initrd is located. By creating a baseline document that contains this information in a machine-parsable format, these tools can instead rely on the generation's description of itself.
 
 This document would also make it possible and easy for users to create their own bootloader, customized to their unique needs. Instead of needing to copy the current implementation for, say, systemd-boot, and then make further changes from there (inheriting all the complexity), they could start from scratch (and even in another language!). For example, if a user wanted to implement Secure Boot support in their bootloader: they may want to send the files necessary for boot (e.g. the kernel, initrd, and init itself) to an external server for signing. With the current infrastructure, this would be difficult -- the user would need to patch the current `systemd-boot-builder.py` script.
 
 The goal of this RFC can be summed up into X points:
 
-1. To limit filesystem magic in our bootloader tools by creating a JSON document that provides necessary information for bootloader tools
+1. To limit filesystem magic in bootloader tools by creating a JSON document that provides the requisite information
 1. To require a further RFC in order to change the contents
 1. (meh:) unified input information via that same document? (e.g. every bootloader gets the same information -- additional info they want is up to them)
 1. more?
@@ -45,10 +45,11 @@ This should get into specifics and corner-cases. Yet, this section should also
 be terse, avoiding redundancy even at the cost of clarity.
 -->
 
-The proposed bootloader specification document takes the form of a JSON document with a filename `boot.v#.json` (referred to henceforth as `boot.json`) and the contents:
+The proposed bootloader specification document takes the form of a JSON document with a filename `boot.v#.json`, where `#` is the current major version number, (referred to henceforth as `boot.json`) and the contents:
 
 - `init` (build-time)
   - The path to the generation's stage 2 init
+  - Build-time because the `init` is written directly to the generation's toplevel (which is only reachable via `$out`)
 - `initrd` (eval-time)
   - The store path of the generation's initrd
   - `"${config.system.build.initialRamdisk}/${config.system.boot.loader.initrdFile}"`
@@ -73,16 +74,17 @@ The proposed bootloader specification document takes the form of a JSON document
   - `config.system.nixos.label`
 - `toplevel` (build-time)
   - The store path of the generation's toplevel
+  - Build-time because the toplevel path is only reachable via `$out`
 
-While it is desirable to have a good foundation of information to build upon, it is undesirable to bring the whole kitchen sink. Each of these keys was chosen by determining what information the current bootloader tools use and from that information deciding what would be most useful to be provided rather than having to be discovered.
+While it is desirable to have a good foundation of information to utilize, it is undesirable to bring the whole kitchen sink. Each of these keys was chosen by determining what information the current bootloader tools use and from that information deciding what would be most useful to be provided rather than having to be discovered.
 
-Essentially, we want to limit filesystem magic to the bare minimum; it may be unavoidable for any information not present in the specification, but that which is generally necessary for a properly-functioning bootloader should be easily accessible.
+Essentially, we want to limit filesystem magic to the bare minimum; it may be unavoidable for any additional information not present in the specification, but that which is generally necessary for a properly-functioning bootloader should be easily accessible.
 
 This document would have both its filename and contents versioned in order to support potential future additions to (or removals from) the format.
 
 TODO: versioning bounds?:
-Adding a new key would only require a "minor" version bump (e.g. the `schemaVersion`)
-Removing or renaming a key would require a "major" version bump (e.g. in the filename) -- reset `schemaVersion` to 1
+Adding a new key would only require a "minor" version bump (the `schemaVersion`)
+Removing or renaming a key would require a "major" version bump (in the filename) -- reset `schemaVersion` to 1
 
 TODO: examples of when a key should be added or removed? concrete guidance on it?
 
@@ -100,7 +102,7 @@ instead.
 
 A concrete example of the desire to limit "filesystem magic" is the `kernelVersion` key: both systemd-boot and grub bootloader tools use (or may use) the kernel version in the description of a generation. However, to retrieve this information, they must get the directory name of the kernel's modules path, which is done by code similar to the following shell snippet: `basename $(dirname $(realpath $toplevel/kernel))/lib/modules/*`.
 
-Rather than maintaining the status quo of bootloader tools being essentially required to extract necessary information from the filesystem, we should instead hand this information (most of which can be gathered at eval-time, anyways!) directly to the tool. For example, the kernel version is easily reachable at eval-time via the `config.boot.kernelPackages.kernel.modDirVersion` attribute.
+Rather than maintaining the status quo of bootloader tools being essentially required to extract necessary information from the filesystem, we should instead hand this static information (most of which can be gathered at eval-time, anyways!) directly to the tool. For example, the kernel version is easily reachable at eval-time via the `config.boot.kernelPackages.kernel.modDirVersion` attribute.
 
 ## Example `boot.json`
 
@@ -128,13 +130,14 @@ Rather than maintaining the status quo of bootloader tools being essentially req
 }
 ```
 
-TODO: publish / cleanup some work to detsys/nixpkgs and link to it here
+One possible implementation generating the `boot.json` may be found here: https://github.com/DeterminateSystems/nixpkgs/tree/boot-spec-rfc.
 
 # Drawbacks
 [drawbacks]: #drawbacks
 
 <!-- Why should we *not* do this? -->
 
+- This would make the `jq` package a dependency of the system builder script
 - Implementing parsing of the bootloader specification in the current tools may require bringing in additional dependencies to deal with JSON
 
 
