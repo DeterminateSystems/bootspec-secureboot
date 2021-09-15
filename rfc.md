@@ -31,8 +31,8 @@ The goal of this RFC can be summed up into X points:
 
 1. To limit filesystem magic in bootloader tools by creating a JSON document that provides the requisite information
 1. To require a further RFC in order to change the contents
-1. (meh:) unified input information via that same document? (e.g. every bootloader gets the same information -- additional info they want is up to them)
-1. more?
+1. TODO: (meh:) unified input information via that same document? (e.g. every bootloader gets the same information -- additional info they want is up to them)
+1. TODO: more?
 
 
 # Detailed design
