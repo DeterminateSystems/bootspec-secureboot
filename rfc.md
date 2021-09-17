@@ -13,7 +13,7 @@ related-issues: (will contain links to implementation PRs)
 
 <!-- One paragraph explanation of the feature. -->
 
-The goal of this feature is to distill and generalize the information that the various NixOS bootloader scripts consume into a single JSON document.
+The goal of this feature is to distill and generalize the information that the various NixOS bootloader scripts consume into a single document attached to the generation.
 
 # Motivation
 [motivation]: #motivation
@@ -29,7 +29,8 @@ This document would also make it possible and easy for users to create their own
 
 The goal of this RFC can be summed up into X points:
 
-1. To limit filesystem magic in bootloader tools by creating a JSON document that provides the requisite information
+1. To attach a description of necessary boot information to all (future) generations
+1. To limit filesystem magic in bootloader tools by utilizing that description
 1. To require a further RFC in order to change the contents
 1. TODO: (meh:) unified input information via that same document? (e.g. every bootloader gets the same information -- additional info they want is up to them)
 1. TODO: more?
@@ -76,6 +77,8 @@ The proposed bootloader specification document takes the form of a JSON document
   - The store path of the generation's toplevel
   - Build-time because the toplevel path is only reachable via `$out`
 
+JSON was chosen as the format because Nix already supports serializing and deserializing from this format extremely well (via `builtins.toJSON` and `builtins.fromJSON`), and many languages support -- or have libraries that support -- fiddling with JSON.
+
 While it is desirable to have a good foundation of information to utilize, it is undesirable to bring the whole kitchen sink. Each of these keys was chosen by determining what information the current bootloader tools use and from that information deciding what would be most useful to be provided rather than having to be discovered.
 
 Essentially, we want to limit filesystem magic to the bare minimum; it may be unavoidable for any additional information not present in the specification, but that which is generally necessary for a properly-functioning bootloader should be easily accessible.
@@ -106,9 +109,11 @@ Rather than maintaining the status quo of bootloader tools being essentially req
 
 ## Example `boot.json`
 
+One possible implementation generating the `boot.json` may be found here: https://github.com/DeterminateSystems/nixpkgs/tree/boot-spec-rfc.
+
 ```json
 {
-  "init": "/nix/store/067rp620j6x0l9rqz5cqa4m3dnd5k79k-nixos-system-scadrial-21.11.20210810.dirty-cosmere/init",
+  "init": "/nix/store/067rp620j6x0l9rqz5cqa4m3dnd5k79k-nixos-system-scadrial-21.11.20210810.dirty/init",
   "initrd": "/nix/store/2p7dgp7zj3kgddcgrc94swrbfj2gdmah-initrd-linux-5.12.19/initrd",
   "initrdSecrets": "/nix/store/r2f307ky2n6ymn4hfs6av7vfy7y9vyid-append-initrd-secrets/bin/append-initrd-secrets",
   "kernel": "/nix/store/v3xankkp4lzd6cl7n4xs63d0pxdm90m0-linux-5.12.19/bzImage",
@@ -125,12 +130,10 @@ Rather than maintaining the status quo of bootloader tools being essentially req
   "kernelVersion": "5.12.19-zen2",
   "schemaVersion": 1,
   "specialisation": {},
-  "systemVersion": "21.11.20210810.dirty-cosmere",
-  "toplevel": "/nix/store/067rp620j6x0l9rqz5cqa4m3dnd5k79k-nixos-system-scadrial-21.11.20210810.dirty-cosmere"
+  "systemVersion": "21.11.20210810.dirty",
+  "toplevel": "/nix/store/067rp620j6x0l9rqz5cqa4m3dnd5k79k-nixos-system-scadrial-21.11.20210810.dirty"
 }
 ```
-
-One possible implementation generating the `boot.json` may be found here: https://github.com/DeterminateSystems/nixpkgs/tree/boot-spec-rfc.
 
 # Drawbacks
 [drawbacks]: #drawbacks
