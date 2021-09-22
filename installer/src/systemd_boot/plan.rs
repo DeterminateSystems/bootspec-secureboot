@@ -259,8 +259,16 @@ fn replace_file(file: &FileToReplace, signing_info: &Option<SigningInfo>) -> Res
     let (hash_a, hash_b) =
         if generated_loc.extension() == Some(OsStr::new("efi")) && signing_info.is_some() {
             let signing_info = signing_info.as_ref().unwrap();
+
+            // If the signed file in the generated location doesn't validate, something went
+            // horribly wrong and this error *should* be bubbled up.
             signing_info.verify_file(generated_loc)?;
-            signing_info.verify_file(esp_loc)?;
+
+            // However, if the signed file in the ESP location doesn't validate, we will be
+            // replacing it with the generated file; just warn the user.
+            if let Err(e) = signing_info.verify_file(esp_loc) {
+                warn!("{}", e);
+            }
 
             let tmp_dir = std::env::temp_dir();
             let generated_tmp = tmp_dir.join("generated");
