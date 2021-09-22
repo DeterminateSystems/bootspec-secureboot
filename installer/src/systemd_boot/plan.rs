@@ -452,52 +452,40 @@ mod tests {
         )
         .unwrap();
         dbg!(&plan);
-        let mut iter = plan.into_iter();
 
-        assert_eq!(iter.next().unwrap(), SystemdBootPlanState::Start);
         assert_eq!(
-            iter.next().unwrap(),
-            SystemdBootPlanState::Update {
-                bootloader_version: SystemdBootVersion::new(246),
-                systemd_version: SystemdVersion::new(247),
-                bootctl,
-                esp,
-            }
+            plan,
+            vec![
+                SystemdBootPlanState::Start,
+                SystemdBootPlanState::Update {
+                    bootloader_version: SystemdBootVersion::new(246),
+                    systemd_version: SystemdVersion::new(247),
+                    bootctl,
+                    esp,
+                },
+                SystemdBootPlanState::PruneFiles {
+                    wanted_generations: &wanted_generations,
+                    paths: vec![&args.generated_entries, esp],
+                },
+                SystemdBootPlanState::ReplaceFiles {
+                    signing_info: &None,
+                    to_replace: vec![],
+                },
+                SystemdBootPlanState::WriteLoader {
+                    path: args.generated_entries.join("loader/loader.conf"),
+                    timeout: args.timeout,
+                    index: default_generation.idx,
+                    editor: args.editor,
+                    console_mode: &args.console_mode,
+                },
+                SystemdBootPlanState::CopyToEsp {
+                    generated_entries: &args.generated_entries,
+                    esp,
+                },
+                SystemdBootPlanState::Syncfs { esp },
+                SystemdBootPlanState::End
+            ]
         );
-        assert_eq!(
-            iter.next().unwrap(),
-            SystemdBootPlanState::PruneFiles {
-                wanted_generations: &wanted_generations,
-                paths: vec![&args.generated_entries, esp],
-            }
-        );
-        assert_eq!(
-            iter.next().unwrap(),
-            SystemdBootPlanState::ReplaceFiles {
-                signing_info: &None,
-                to_replace: vec![],
-            }
-        );
-        assert_eq!(
-            iter.next().unwrap(),
-            SystemdBootPlanState::WriteLoader {
-                path: args.generated_entries.join("loader/loader.conf"),
-                timeout: args.timeout,
-                index: default_generation.idx,
-                editor: args.editor,
-                console_mode: &args.console_mode,
-            }
-        );
-        assert_eq!(
-            iter.next().unwrap(),
-            SystemdBootPlanState::CopyToEsp {
-                generated_entries: &args.generated_entries,
-                esp,
-            }
-        );
-        assert_eq!(iter.next().unwrap(), SystemdBootPlanState::Syncfs { esp });
-        assert_eq!(iter.next().unwrap(), SystemdBootPlanState::End);
-        assert_eq!(iter.next(), None);
     }
 
     #[test]
@@ -518,51 +506,39 @@ mod tests {
         )
         .unwrap();
         dbg!(&plan);
-        let mut iter = plan.into_iter();
 
-        assert_eq!(iter.next().unwrap(), SystemdBootPlanState::Start);
         assert_eq!(
-            iter.next().unwrap(),
-            SystemdBootPlanState::Install {
-                loader: None,
-                bootctl,
-                esp,
-                can_touch_efi_vars: args.can_touch_efi_vars,
-            }
+            plan,
+            vec![
+                SystemdBootPlanState::Start,
+                SystemdBootPlanState::Install {
+                    loader: None,
+                    bootctl,
+                    esp,
+                    can_touch_efi_vars: args.can_touch_efi_vars,
+                },
+                SystemdBootPlanState::PruneFiles {
+                    wanted_generations: &wanted_generations,
+                    paths: vec![&args.generated_entries, esp],
+                },
+                SystemdBootPlanState::ReplaceFiles {
+                    signing_info: &None,
+                    to_replace: vec![],
+                },
+                SystemdBootPlanState::WriteLoader {
+                    path: args.generated_entries.join("loader/loader.conf"),
+                    timeout: args.timeout,
+                    index: default_generation.idx,
+                    editor: args.editor,
+                    console_mode: &args.console_mode,
+                },
+                SystemdBootPlanState::CopyToEsp {
+                    generated_entries: &args.generated_entries,
+                    esp,
+                },
+                SystemdBootPlanState::Syncfs { esp },
+                SystemdBootPlanState::End
+            ]
         );
-        assert_eq!(
-            iter.next().unwrap(),
-            SystemdBootPlanState::PruneFiles {
-                wanted_generations: &wanted_generations,
-                paths: vec![&args.generated_entries, esp],
-            }
-        );
-        assert_eq!(
-            iter.next().unwrap(),
-            SystemdBootPlanState::ReplaceFiles {
-                signing_info: &None,
-                to_replace: vec![],
-            }
-        );
-        assert_eq!(
-            iter.next().unwrap(),
-            SystemdBootPlanState::WriteLoader {
-                path: args.generated_entries.join("loader/loader.conf"),
-                timeout: args.timeout,
-                index: default_generation.idx,
-                editor: args.editor,
-                console_mode: &args.console_mode,
-            }
-        );
-        assert_eq!(
-            iter.next().unwrap(),
-            SystemdBootPlanState::CopyToEsp {
-                generated_entries: &args.generated_entries,
-                esp,
-            }
-        );
-        assert_eq!(iter.next().unwrap(), SystemdBootPlanState::Syncfs { esp });
-        assert_eq!(iter.next().unwrap(), SystemdBootPlanState::End);
-        assert_eq!(iter.next(), None);
     }
 }
