@@ -13,7 +13,7 @@ related-issues: (will contain links to implementation PRs)
 
 <!-- One paragraph explanation of the feature. -->
 
-The goal of this feature is to distill and generalize the information that the various NixOS bootloader scripts consume into a single document attached to the generation.
+The goal of this feature is to distill and generalize the information that the various NixOS bootloader scripts consume into a single specification attached to the generation.
 
 # Motivation
 [motivation]: #motivation
@@ -23,17 +23,17 @@ Why are we doing this? What use cases does it support? What is the expected
 outcome?
 -->
 
-In Nixpkgs / NixOS, there exist various bootloader tools (such as those used for managing systemd-boot and grub), each utilizing varying amounts of information about the generation. As it is now, bootloader tools may spelunk the filesystem in order to infer necessary information, such as the kernel version or where the initrd is located. By creating a baseline document that contains this information in a machine-parsable format, these tools can instead rely on the generation's description of itself.
+NixOS builds declarative systems, but the result of that build installs itself and thus external tools cannot easily get information about how to boot that system. This RFC will make this information more externally usable, and because external tools may want to utilize the specification, changes to the format should be carefully considered by the Nix community at large.
 
-This document would also make it possible and easy for users to create their own bootloader, customized to their unique needs. Instead of needing to copy the current implementation for, say, systemd-boot, and then make further changes from there (inheriting all the complexity), they could start from scratch (and even in another language!). For example, if a user wanted to implement Secure Boot support in their bootloader: they may want to send the files necessary for boot (e.g. the kernel, initrd, and init itself) to an external server for signing. With the current infrastructure, this would be difficult -- the user would need to patch the current `systemd-boot-builder.py` script.
+In the Nixpkgs repository, there exist various bootloader tools, each utilizing varying amounts of information about the generation. As it is now, bootloader tools may spelunk the filesystem in order to infer necessary information, such as the kernel version or where the initrd is located. This also causes a disparity in features implemented by these tools -- for example, the systemd-boot installer does not create boot entries for specialisations, while the grub installer does. By creating a specification that contains this information in a machine-parsable format, these tools can instead rely on the generation's description of itself.
 
-The goal of this RFC can be summed up into X points:
+This specification would also make it possible for users to create their own bootloader, customized to their unique needs. Instead of needing to copy one of the current implementations and adjust it to their needs, they could start from scratch (and even in another language!). For example, if a user wanted to implement Secure Boot support in their bootloader, they may want to send the files necessary for boot (e.g. the kernel, initrd, and init itself) to an external server for signing. With the current infrastructure, this would be difficult -- the user would need to patch the current `systemd-boot-builder.py` script.
+
+The goal of this RFC can be summed up into 3 points:
 
 1. To attach a description of necessary boot information to all (future) generations
-1. To limit filesystem magic in bootloader tools by utilizing that description
-1. To require a further RFC in order to change the contents
-1. TODO: (meh:) unified input information via that same document? (e.g. every bootloader gets the same information -- additional info they want is up to them)
-1. TODO: more?
+2. To eliminate detecting information from the filesystem by utilizing that description to create the bootloader data
+3. To require a further RFC in order to change the contents
 
 
 # Detailed design
@@ -46,7 +46,7 @@ This should get into specifics and corner-cases. Yet, this section should also
 be terse, avoiding redundancy even at the cost of clarity.
 -->
 
-The proposed bootloader specification document takes the form of a JSON document with a filename `boot.v#.json`, where `#` is the current major version number, (referred to henceforth as `boot.json`) and the contents:
+The proposed bootloader specification takes the form of a JSON document with a filename `boot.v#.json`, where `#` is the current major version number, (referred to as `boot.json` from this point onwards) and the contents:
 
 - `init` (build-time)
   - The path to the generation's stage 2 init
@@ -61,15 +61,15 @@ The proposed bootloader specification document takes the form of a JSON document
   - The store path of the generation's kernel
   - `"${config.boot.kernelPackages.kernel}/${config.system.boot.loader.kernelFile}"`
 - `kernelParams` (eval-time)
-  - A JSON list of parameters to pass to the kernel
+  - A list of parameters to pass to the kernel
   - `config.boot.kernelParams`
 - `kernelVersion` (eval-time)
   - The version of the generation's kernel
   - `config.boot.kernelPackages.kernel.modDirVersion`
 - `schemaVersion`
-  - The version of the bootloader schema described by the boot.json
+  - The version of the bootloader schema described by the specification file
 - `specialisations` (eval-time)
-  - A JSON mapping of specialisation names to the location of their boot.json
+  - A mapping of specialisation names to the location of their specification file
 - `systemVersion` (eval-time)
   - The generation's NixOS version
   - `config.system.nixos.label`
@@ -77,19 +77,11 @@ The proposed bootloader specification document takes the form of a JSON document
   - The store path of the generation's toplevel
   - Build-time because the toplevel path is only reachable via `$out`
 
-JSON was chosen as the format because Nix already supports serializing and deserializing from this format extremely well (via `builtins.toJSON` and `builtins.fromJSON`), and many languages support -- or have libraries that support -- fiddling with JSON.
+JSON was chosen as the specification format because Nix already supports serializing and deserializing from this format extremely well (via `builtins.toJSON` and `builtins.fromJSON`), and many languages support -- or have libraries that support -- manipulating JSON.
 
-While it is desirable to have a good foundation of information to utilize, it is undesirable to bring the whole kitchen sink. Each of these keys was chosen by determining what information the current bootloader tools use and from that information deciding what would be most useful to be provided rather than having to be discovered.
+Each of these keys was chosen by determining what information the current bootloader tools use and picking those that would be most useful to be provided rather than having to be discovered.
 
-Essentially, we want to limit filesystem magic to the bare minimum; it may be unavoidable for any additional information not present in the specification, but that which is generally necessary for a properly-functioning bootloader should be easily accessible.
-
-This document would have both its filename and contents versioned in order to support potential future additions to (or removals from) the format.
-
-TODO: versioning bounds?:
-Adding a new key would only require a "minor" version bump (the `schemaVersion`)
-Removing or renaming a key would require a "major" version bump (in the filename) -- reset `schemaVersion` to 1
-
-TODO: examples of when a key should be added or removed? concrete guidance on it?
+This document would have both its filename and contents versioned in order to support potential future additions to (or removals from) the format. Adding a new key would only require a "minor" version bump (e.g. incrementing the `schemaVersion` inside the document) because it does not change the existing information. Removing, renaming, or changing the meaning of a key would require a "major" version bump (e.g. incrementing the version in the filename), and would reset the "minor" version to 1.
 
 
 # Examples and Interactions
@@ -105,7 +97,10 @@ instead.
 
 A concrete example of the desire to limit "filesystem magic" is the `kernelVersion` key: both systemd-boot and grub bootloader tools use (or may use) the kernel version in the description of a generation. However, to retrieve this information, they must get the directory name of the kernel's modules path, which is done by code similar to the following shell snippet: `basename $(dirname $(realpath $toplevel/kernel))/lib/modules/*`.
 
-Rather than maintaining the status quo of bootloader tools being essentially required to extract necessary information from the filesystem, we should instead hand this static information (most of which can be gathered at eval-time, anyways!) directly to the tool. For example, the kernel version is easily reachable at eval-time via the `config.boot.kernelPackages.kernel.modDirVersion` attribute.
+Rather than maintaining the status quo of bootloader tools being required to extract necessary information from the filesystem, this static information should be handed directly to the tool. As an example, the kernel version is easily reachable at eval-time via the `config.boot.kernelPackages.kernel.modDirVersion` attribute.
+
+TODO: examples of when a key should be added or removed? concrete guidance on it?
+
 
 ## Example `boot.json`
 
@@ -140,7 +135,6 @@ One possible implementation generating the `boot.json` may be found here: https:
 
 <!-- Why should we *not* do this? -->
 
-- This would make the `jq` package a dependency of the system builder script
 - Implementing parsing of the bootloader specification in the current tools may require bringing in additional dependencies to deal with JSON
 
 
@@ -152,7 +146,7 @@ What other designs have been considered? What is the impact of not doing this?
 -->
 
 - Alternatives may include using a different, but easily machine-parsable language
-  - JSON and XML are the only languages that Nix supports generating (e.g. using `builtins.toJSON` and `builtins.toXML`), but JSON was chosen because it has better tooling in a larger variety of language ecosystems
+  - JSON and XML are the only languages that Nix supports generating at eval-time (e.g. using `builtins.toJSON` and `builtins.toXML`), but JSON was chosen because it has better tooling in a larger variety of language ecosystems
 
 
 # Unresolved questions
