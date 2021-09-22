@@ -1,20 +1,23 @@
 // TODO: better module name?
 
-use std::path::{Path, PathBuf};
+use std::{
+    ffi::OsStr,
+    path::{Path, PathBuf},
+};
 
 use crate::Result;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct FileToReplace {
     pub generated_loc: PathBuf,
     pub esp_loc: PathBuf,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IdentifiedFiles {
-    // TODO: maybe rename to to_sign and filter out non-.efi files?
-    // it's not necessary to track which files should be added, because the `generated_entries` directory gets copied wholesale on installation
+    // FIXME: it's not necessary to track which files should be added, because the `generated_entries` directory gets copied wholesale on installation
     pub to_add: Vec<PathBuf>,
+    pub to_sign: Vec<PathBuf>,
     pub to_replace: Vec<FileToReplace>,
 }
 
@@ -62,6 +65,17 @@ impl IdentifiedFiles {
             }
         }
 
-        Ok(IdentifiedFiles { to_add, to_replace })
+        let to_sign = to_add
+            .iter()
+            .chain(to_replace.iter().map(|e| &e.generated_loc))
+            .filter(|e| e.extension() == Some(OsStr::new("efi")))
+            .map(ToOwned::to_owned)
+            .collect();
+
+        Ok(IdentifiedFiles {
+            to_add,
+            to_sign,
+            to_replace,
+        })
     }
 }
