@@ -7,6 +7,8 @@ use std::path::Path;
 use log::{debug, trace, warn};
 use regex::Regex;
 
+use crate::files::IdentifiedFiles;
+use crate::systemd_boot::plan::PlanArgs;
 use crate::systemd_boot::version::systemd::SystemdVersion;
 use crate::systemd_boot::version::systemd_boot::SystemdBootVersion;
 use crate::util::{self, Generation};
@@ -48,16 +50,20 @@ pub(crate) fn install(args: Args) -> Result<()> {
                 return Err(e);
             }
         };
+        let identified_files = IdentifiedFiles::new(&args.generated_entries, esp)?;
 
-        let plan = plan::create_plan(
-            &args,
+        let plan_args = PlanArgs {
+            args: &args,
             bootctl,
             esp,
             bootloader_version,
             systemd_version,
-            &wanted_generations,
+            wanted_generations: &wanted_generations,
             default_generation,
-        )?;
+            identified_files,
+        };
+
+        let plan = plan::create_plan(plan_args)?;
 
         if args.dry_run {
             writeln!(std::io::stdout(), "{:#?}", plan)?;

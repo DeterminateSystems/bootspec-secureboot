@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use crc::{Crc, CRC_32_ISCSI};
-use log::{debug, error, info, trace};
+use log::{debug, error, info, trace, warn};
 
 use super::version::systemd::SystemdVersion;
 use super::version::systemd_boot::SystemdBootVersion;
@@ -64,15 +64,27 @@ pub(crate) enum SystemdBootPlanState<'a> {
 
 type SystemdBootPlan<'a> = Vec<SystemdBootPlanState<'a>>;
 
-pub(crate) fn create_plan<'a>(
-    args: &'a Args,
-    bootctl: &'a Path,
-    esp: &'a Path,
-    bootloader_version: Option<SystemdBootVersion>,
-    systemd_version: SystemdVersion,
-    wanted_generations: &'a [Generation],
-    default_generation: &'a Generation,
-) -> Result<SystemdBootPlan<'a>> {
+pub(crate) struct PlanArgs<'a> {
+    pub args: &'a Args,
+    pub bootctl: &'a Path,
+    pub esp: &'a Path,
+    pub bootloader_version: Option<SystemdBootVersion>,
+    pub systemd_version: SystemdVersion,
+    pub wanted_generations: &'a [Generation],
+    pub default_generation: &'a Generation,
+    pub identified_files: IdentifiedFiles,
+}
+
+pub(crate) fn create_plan(plan_args: PlanArgs) -> Result<SystemdBootPlan> {
+    let args = plan_args.args;
+    let bootctl = plan_args.bootctl;
+    let esp = plan_args.esp;
+    let bootloader_version = plan_args.bootloader_version;
+    let systemd_version = plan_args.systemd_version;
+    let wanted_generations = plan_args.wanted_generations;
+    let default_generation = plan_args.default_generation;
+    let identified_files = plan_args.identified_files;
+
     let mut plan = vec![SystemdBootPlanState::Start];
 
     if args.install {
@@ -105,23 +117,17 @@ pub(crate) fn create_plan<'a>(
         paths: vec![&args.generated_entries, esp],
     });
 
-    let identified_files = IdentifiedFiles::new(&args.generated_entries, esp)?;
+    if let Some(signing_info) = &args.signing_info {
+        plan.push(SystemdBootPlanState::SignFiles {
+            signing_info,
+            to_sign: identified_files.to_sign,
+        });
+    }
 
     plan.push(SystemdBootPlanState::ReplaceFiles {
         signing_info: &args.signing_info,
         to_replace: identified_files.to_replace,
     });
-
-    if let Some(signing_info) = &args.signing_info {
-        plan.push(SystemdBootPlanState::SignFiles {
-            signing_info,
-            to_sign: identified_files
-                .to_add
-                .into_iter()
-                .filter(|e| e.extension() == Some(OsStr::new("efi")))
-                .collect(),
-        });
-    }
 
     plan.push(SystemdBootPlanState::WriteLoader {
         path: args.generated_entries.join("loader/loader.conf"),
@@ -184,16 +190,6 @@ pub(crate) fn consume_plan(plan: SystemdBootPlan) -> Result<()> {
                     super::remove_old_files(wanted_generations, path)?;
                 }
             }
-            ReplaceFiles {
-                signing_info,
-                to_replace,
-            } => {
-                trace!("replacing existing files in esp");
-
-                for file in to_replace {
-                    self::replace_file(&file, signing_info)?;
-                }
-            }
             SignFiles {
                 signing_info,
                 to_sign,
@@ -202,6 +198,16 @@ pub(crate) fn consume_plan(plan: SystemdBootPlan) -> Result<()> {
 
                 for file in to_sign {
                     signing_info.sign_file(&file)?;
+                }
+            }
+            ReplaceFiles {
+                signing_info,
+                to_replace,
+            } => {
+                trace!("replacing existing files in esp");
+
+                for file in to_replace {
+                    self::replace_file(&file, signing_info)?;
                 }
             }
             WriteLoader {
@@ -297,7 +303,7 @@ fn replace_file(file: &FileToReplace, signing_info: &Option<SigningInfo>) -> Res
         );
         fs::remove_file(&generated_loc)?;
     } else {
-        info!(
+        warn!(
             "{} is different from {} and will be replaced",
             esp_loc.display(),
             generated_loc.display(),
@@ -378,7 +384,10 @@ mod tests {
     use super::*;
     use std::ffi::OsString;
 
-    fn scaffold(install: bool) -> (Args, Vec<Generation>, Generation) {
+    fn scaffold(
+        install: bool,
+        signing_info: Option<SigningInfo>,
+    ) -> (Args, Vec<Generation>, Generation, IdentifiedFiles) {
         let args = Args {
             toplevel: PathBuf::from("toplevel"),
             dry_run: false,
@@ -393,7 +402,7 @@ mod tests {
             can_touch_efi_vars: false,
             bootctl: Some(PathBuf::from("bootctl")),
             unified_efi: false,
-            signing_info: None,
+            signing_info,
         };
         let system_generations = vec![
             Generation {
@@ -429,28 +438,48 @@ mod tests {
                 OsString::from("abcd-initrd-linux-5.12.9-initrd.efi"),
             ],
         };
+        let identified_files = IdentifiedFiles {
+            to_add: vec![
+                PathBuf::from("nixos-generation-1.conf"),
+                PathBuf::from("nixos-generation-2.conf"),
+                PathBuf::from("abcd-linux-5.12.9-bzImage.efi"),
+                PathBuf::from("abcd-initrd-linux-5.12.9-initrd.efi"),
+            ],
+            to_sign: vec![
+                PathBuf::from("abcd-linux-5.12.9-bzImage.efi"),
+                PathBuf::from("abcd-initrd-linux-5.12.9-initrd.efi"),
+            ],
+            to_replace: vec![],
+        };
 
-        (args, wanted_generations, default_generation)
+        (
+            args,
+            wanted_generations,
+            default_generation,
+            identified_files,
+        )
     }
 
     #[test]
     fn test_update_plan() {
-        let (args, wanted_generations, default_generation) = scaffold(false);
+        let (args, wanted_generations, default_generation, identified_files) =
+            scaffold(false, None);
         let systemd_version = SystemdVersion::new(247);
         let bootloader_version = SystemdBootVersion::new(246);
         let bootctl = args.bootctl.as_ref().unwrap();
         let esp = &args.esp[0];
-
-        let plan = create_plan(
-            &args,
+        let plan_args = PlanArgs {
+            args: &args,
             bootctl,
             esp,
-            Some(bootloader_version),
+            bootloader_version: Some(bootloader_version),
             systemd_version,
-            &wanted_generations,
-            &default_generation,
-        )
-        .unwrap();
+            wanted_generations: &wanted_generations,
+            default_generation: &default_generation,
+            identified_files,
+        };
+
+        let plan = create_plan(plan_args).unwrap();
         dbg!(&plan);
 
         assert_eq!(
@@ -490,21 +519,22 @@ mod tests {
 
     #[test]
     fn test_install_plan() {
-        let (args, wanted_generations, default_generation) = scaffold(true);
+        let (args, wanted_generations, default_generation, identified_files) = scaffold(true, None);
         let systemd_version = SystemdVersion::new(247);
         let bootctl = args.bootctl.as_ref().unwrap();
         let esp = &args.esp[0];
-
-        let plan = create_plan(
-            &args,
+        let plan_args = PlanArgs {
+            args: &args,
             bootctl,
             esp,
-            None,
+            bootloader_version: None,
             systemd_version,
-            &wanted_generations,
-            &default_generation,
-        )
-        .unwrap();
+            wanted_generations: &wanted_generations,
+            default_generation: &default_generation,
+            identified_files,
+        };
+
+        let plan = create_plan(plan_args).unwrap();
         dbg!(&plan);
 
         assert_eq!(
@@ -523,6 +553,72 @@ mod tests {
                 },
                 SystemdBootPlanState::ReplaceFiles {
                     signing_info: &None,
+                    to_replace: vec![],
+                },
+                SystemdBootPlanState::WriteLoader {
+                    path: args.generated_entries.join("loader/loader.conf"),
+                    timeout: args.timeout,
+                    index: default_generation.idx,
+                    editor: args.editor,
+                    console_mode: &args.console_mode,
+                },
+                SystemdBootPlanState::CopyToEsp {
+                    generated_entries: &args.generated_entries,
+                    esp,
+                },
+                SystemdBootPlanState::Syncfs { esp },
+                SystemdBootPlanState::End
+            ]
+        );
+    }
+
+    #[test]
+    fn test_sign_plan() {
+        let signing_info = SigningInfo {
+            signing_key: PathBuf::from("db.key"),
+            signing_cert: PathBuf::from("db.crt"),
+            sbsign: PathBuf::from("sbsign"),
+            sbverify: PathBuf::from("sbverify"),
+        };
+        let (args, wanted_generations, default_generation, identified_files) =
+            scaffold(false, Some(signing_info));
+        let systemd_version = SystemdVersion::new(247);
+        let bootloader_version = SystemdBootVersion::new(246);
+        let bootctl = args.bootctl.as_ref().unwrap();
+        let esp = &args.esp[0];
+        let plan_args = PlanArgs {
+            args: &args,
+            bootctl,
+            esp,
+            bootloader_version: Some(bootloader_version),
+            systemd_version,
+            wanted_generations: &wanted_generations,
+            default_generation: &default_generation,
+            identified_files: identified_files.clone(),
+        };
+
+        let plan = create_plan(plan_args).unwrap();
+
+        assert_eq!(
+            plan,
+            vec![
+                SystemdBootPlanState::Start,
+                SystemdBootPlanState::Update {
+                    bootloader_version: SystemdBootVersion::new(246),
+                    systemd_version: SystemdVersion::new(247),
+                    bootctl,
+                    esp,
+                },
+                SystemdBootPlanState::PruneFiles {
+                    wanted_generations: &wanted_generations,
+                    paths: vec![&args.generated_entries, esp],
+                },
+                SystemdBootPlanState::SignFiles {
+                    signing_info: args.signing_info.as_ref().unwrap(),
+                    to_sign: identified_files.to_sign
+                },
+                SystemdBootPlanState::ReplaceFiles {
+                    signing_info: &args.signing_info,
                     to_replace: vec![],
                 },
                 SystemdBootPlanState::WriteLoader {
