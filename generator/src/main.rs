@@ -1,63 +1,65 @@
-// this just creates generation boot configs
-// accepts a list of system profiles / generations
+use std::path::PathBuf;
 
-// TODO: better error handling
-//  -> just replace unwraps with expects for now
+use generator::bootable::{self, Bootable, EfiProgram};
+use generator::{systemd_boot, Generation, Result};
+use structopt::StructOpt;
 
-// to create the bootloader profile:
-// (do this in the installer package?)
-// 1. cd (mktemp -d)
-// 2. run this to get boot/entries/...
-// 3. nix-store --add ./somepath
-// 4a. make sure bootloader profile doesn't exist (or is ours)?
-// 4b. then nix-env -p /nix/var/nix/profiles/bootloader --set ...
-
-// TODO: think about user flows, how the tool should behave
-// use cases:
-//   * generating bootloader entries to install (if supported / necessitated by the bootloader)
-
-// boot.loader.manual.enable = true; <- stubs out the `installBootloader` script to say "OK, update your bootloader now!\n  {path to bootspec.json}"
-
-use std::env;
-use std::fs;
-use std::io::Write;
-use std::os::unix;
-use std::path::{Path, PathBuf};
-
-use generator::{grub, systemd_boot};
-
-fn main() {
-    env::set_var("RUST_BACKTRACE", "1");
+#[derive(Default, Debug, StructOpt)]
+struct Args {
     // TODO: --out-dir?
-    // if len(args) < 2, quit
-    // this will eventually accept a list of profiles / generations with which to generate bootloader configs
-    let generations = env::args().skip(1);
-    // basically [/nix/var/nix/profiles/system-69-link, /nix/var/nix/profiles/system-70-link, ...]
+    /// The systemd-boot EFI stub used to create a unified EFI file
+    #[structopt(long, requires_all = &["objcopy", "unified-efi"])]
+    systemd_efi_stub: Option<PathBuf>,
+    /// The `objcopy` binary
+    #[structopt(long, requires_all = &["systemd-efi-stub", "unified-efi"])]
+    objcopy: Option<PathBuf>,
+    /// Whether or not to combine the initrd and kernel into a unified EFI file
+    #[structopt(long, requires_all = &["systemd-efi-stub", "objcopy"])]
+    unified_efi: bool,
+    /// The `systemd-machine-id-setup` binary
+    // TODO: maybe just pass in machine_id as an arg; if empty, omit from configuration?
+    #[structopt(long)]
+    systemd_machine_id_setup: PathBuf,
+    /// A list of generations in the form of `/nix/var/nix/profiles/system-*-link`
+    #[structopt(required = true)]
+    generations: Vec<String>,
+}
 
-    for generation in generations {
-        if generation.is_empty() {
-            continue;
-        }
+fn main() -> Result<()> {
+    let args = Args::from_args();
 
-        let (i, profile) = generator::parse_generation(&generation);
-        let generation_path = PathBuf::from(&generation);
-        let json = generator::get_json(generation_path);
+    let generations = args
+        .generations
+        .into_iter()
+        .filter_map(|gen| {
+            generator::parse_generation(&gen)
+                .ok()
+                .map(|(index, profile)| Generation {
+                    index,
+                    profile,
+                    bootspec: generator::get_json(PathBuf::from(gen)),
+                })
+        })
+        .collect::<Vec<_>>();
+    let toplevels = bootable::flatten(generations)?;
+    let bootables: Vec<Bootable> = if args.unified_efi {
+        toplevels
+            .into_iter()
+            .map(|toplevel| Bootable::Efi(EfiProgram::new(toplevel)))
+            .collect()
+    } else {
+        toplevels.into_iter().map(Bootable::Linux).collect()
+    };
 
-        for (path, contents) in systemd_boot::entry(&json, i, &profile).unwrap() {
-            fs::create_dir_all(format!("{}/efi/nixos", systemd_boot::ROOT)).unwrap();
-            fs::create_dir_all(format!("{}/loader/entries", systemd_boot::ROOT)).unwrap();
-            let mut f = fs::File::create(path).unwrap();
-            write!(f, "{}", contents.conf).unwrap();
+    systemd_boot::generate(
+        bootables,
+        args.objcopy,
+        args.systemd_efi_stub,
+        args.systemd_machine_id_setup,
+    )?;
 
-            if !Path::new(&contents.kernel.1).exists() {
-                unix::fs::symlink(contents.kernel.0, contents.kernel.1).unwrap();
-            }
+    // TODO: grub
+    // grub::generate(bootables, args.objcopy)?;
 
-            if !Path::new(&contents.initrd.1).exists() {
-                unix::fs::symlink(contents.initrd.0, contents.initrd.1).unwrap();
-            }
-        }
-
-        grub::entry(&json, i, &profile).unwrap();
-    }
+    Ok(())
 }

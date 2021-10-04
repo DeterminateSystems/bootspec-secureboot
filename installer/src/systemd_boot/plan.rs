@@ -1,16 +1,21 @@
-use std::ffi::CStr;
+use std::ffi::{CStr, OsStr};
 use std::fs::{self, File};
 use std::io::Write as _;
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
-use log::{debug, error, info, trace};
+use crc::{Crc, CRC_32_ISCSI};
+use log::{debug, error, info, trace, warn};
 
 use super::version::systemd::SystemdVersion;
 use super::version::systemd_boot::SystemdBootVersion;
+use crate::files::{FileToReplace, IdentifiedFiles};
+use crate::secure_boot::SigningInfo;
 use crate::util::{self, Generation};
 use crate::{Args, Result};
+
+const CASTAGNOLI: Crc<u32> = Crc::<u32>::new(&CRC_32_ISCSI);
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum SystemdBootPlanState<'a> {
@@ -27,7 +32,7 @@ pub(crate) enum SystemdBootPlanState<'a> {
         bootctl: &'a Path,
         esp: &'a Path,
     },
-    Prune {
+    PruneFiles {
         wanted_generations: &'a [Generation],
         paths: Vec<&'a Path>,
     },
@@ -37,6 +42,14 @@ pub(crate) enum SystemdBootPlanState<'a> {
         index: usize,
         editor: bool,
         console_mode: &'a str,
+    },
+    ReplaceFiles {
+        signing_info: &'a Option<SigningInfo>,
+        to_replace: Vec<FileToReplace>,
+    },
+    SignFiles {
+        signing_info: &'a SigningInfo,
+        to_sign: Vec<PathBuf>,
     },
     // TODO: "Hook" phase here?
     CopyToEsp {
@@ -51,15 +64,27 @@ pub(crate) enum SystemdBootPlanState<'a> {
 
 type SystemdBootPlan<'a> = Vec<SystemdBootPlanState<'a>>;
 
-pub(crate) fn create_plan<'a>(
-    args: &'a Args,
-    bootctl: &'a Path,
-    esp: &'a Path,
-    bootloader_version: Option<SystemdBootVersion>,
-    systemd_version: SystemdVersion,
-    wanted_generations: &'a [Generation],
-    default_generation: &'a Generation,
-) -> Result<SystemdBootPlan<'a>> {
+pub(crate) struct PlanArgs<'a> {
+    pub args: &'a Args,
+    pub bootctl: &'a Path,
+    pub esp: &'a Path,
+    pub bootloader_version: Option<SystemdBootVersion>,
+    pub systemd_version: SystemdVersion,
+    pub wanted_generations: &'a [Generation],
+    pub default_generation: &'a Generation,
+    pub identified_files: IdentifiedFiles,
+}
+
+pub(crate) fn create_plan(plan_args: PlanArgs) -> Result<SystemdBootPlan> {
+    let args = plan_args.args;
+    let bootctl = plan_args.bootctl;
+    let esp = plan_args.esp;
+    let bootloader_version = plan_args.bootloader_version;
+    let systemd_version = plan_args.systemd_version;
+    let wanted_generations = plan_args.wanted_generations;
+    let default_generation = plan_args.default_generation;
+    let identified_files = plan_args.identified_files;
+
     let mut plan = vec![SystemdBootPlanState::Start];
 
     if args.install {
@@ -87,9 +112,21 @@ pub(crate) fn create_plan<'a>(
     // Remove old things from both the generated entries and ESP
     // - Generated entries because we don't need to waste space on copying unused kernels / initrds / entries
     // - ESP so that we don't have unbootable entries
-    plan.push(SystemdBootPlanState::Prune {
+    plan.push(SystemdBootPlanState::PruneFiles {
         wanted_generations,
         paths: vec![&args.generated_entries, esp],
+    });
+
+    if let Some(signing_info) = &args.signing_info {
+        plan.push(SystemdBootPlanState::SignFiles {
+            signing_info,
+            to_sign: identified_files.to_sign,
+        });
+    }
+
+    plan.push(SystemdBootPlanState::ReplaceFiles {
+        signing_info: &args.signing_info,
+        to_replace: identified_files.to_replace,
     });
 
     plan.push(SystemdBootPlanState::WriteLoader {
@@ -138,7 +175,7 @@ pub(crate) fn consume_plan(plan: SystemdBootPlan) -> Result<()> {
                 trace!("updating systemd-boot");
                 self::run_update(bootloader_version, systemd_version, bootctl, esp)?;
             }
-            Prune {
+            PruneFiles {
                 wanted_generations,
                 paths,
             } => {
@@ -151,6 +188,26 @@ pub(crate) fn consume_plan(plan: SystemdBootPlan) -> Result<()> {
                     );
 
                     super::remove_old_files(wanted_generations, path)?;
+                }
+            }
+            SignFiles {
+                signing_info,
+                to_sign,
+            } => {
+                trace!("signing efi files");
+
+                for file in to_sign {
+                    signing_info.sign_file(&file)?;
+                }
+            }
+            ReplaceFiles {
+                signing_info,
+                to_replace,
+            } => {
+                trace!("replacing existing files in esp");
+
+                for file in to_replace {
+                    self::replace_file(&file, signing_info)?;
                 }
             }
             WriteLoader {
@@ -179,6 +236,7 @@ pub(crate) fn consume_plan(plan: SystemdBootPlan) -> Result<()> {
                 // If there's not enough space for everything, this will error out while copying files, before
                 // anything is overwritten via renaming.
                 util::atomic_tmp_copy(generated_entries, esp)?;
+                fs::remove_dir_all(&generated_entries)?;
             }
             Syncfs { esp } => {
                 trace!("attempting to syncfs(2) the esp");
@@ -188,6 +246,91 @@ pub(crate) fn consume_plan(plan: SystemdBootPlan) -> Result<()> {
                 trace!("finished updating / installing")
             }
         }
+    }
+
+    Ok(())
+}
+
+fn replace_file(file: &FileToReplace, signing_info: &Option<SigningInfo>) -> Result<()> {
+    let generated_loc = &file.generated_loc;
+    let esp_loc = &file.esp_loc;
+
+    let (hash_a, hash_b) = if signing_info.is_some()
+        && generated_loc.extension() == Some(OsStr::new("efi"))
+    {
+        let signing_info = signing_info.as_ref().unwrap();
+
+        // If the signed file in the generated location doesn't validate, something went
+        // horribly wrong and this error *should* be bubbled up.
+        signing_info.verify_file(generated_loc)?;
+
+        // However, if the signed file in the ESP location doesn't validate, we will be
+        // replacing it with the generated file; just warn the user.
+        if let Err(e) = signing_info.verify_file(esp_loc) {
+            warn!("{}", e);
+        }
+
+        let tmp_dir = std::env::temp_dir();
+        let generated_tmp = tmp_dir.join("generated");
+        let esp_tmp = tmp_dir.join("esp");
+
+        fs::copy(&generated_loc, &generated_tmp)?;
+        fs::copy(&esp_loc, &esp_tmp)?;
+
+        let sbattach = env!("PATCHED_SBATTACH_BINARY");
+        let args = &["--remove", &generated_tmp.display().to_string()];
+        debug!("running `{}` with args `{:?}`", &sbattach, &args);
+        let status = Command::new(sbattach)
+            .args(args)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()?;
+        if !status.success() {
+            return Err(format!(
+                "failed to remove signature from '{}'",
+                generated_tmp.display()
+            )
+            .into());
+        }
+
+        let args = &["--remove", &esp_tmp.display().to_string()];
+        debug!("running `{}` with args `{:?}`", &sbattach, &args);
+        let status = Command::new(sbattach)
+            .args(args)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()?;
+        if !status.success() {
+            return Err(format!("failed to remove signature from '{}'", esp_tmp.display()).into());
+        }
+
+        let hash_a = CASTAGNOLI.checksum(&fs::read(&generated_tmp)?);
+        let hash_b = CASTAGNOLI.checksum(&fs::read(&esp_tmp)?);
+
+        fs::remove_file(&generated_tmp)?;
+        fs::remove_file(&esp_tmp)?;
+
+        (hash_a, hash_b)
+    } else {
+        let hash_a = CASTAGNOLI.checksum(&fs::read(&generated_loc)?);
+        let hash_b = CASTAGNOLI.checksum(&fs::read(&esp_loc)?);
+
+        (hash_a, hash_b)
+    };
+
+    if hash_a == hash_b {
+        debug!(
+            "{} and {} are the same file",
+            esp_loc.display(),
+            generated_loc.display()
+        );
+        fs::remove_file(&generated_loc)?;
+    } else {
+        warn!(
+            "{} is different from {} and will be replaced",
+            esp_loc.display(),
+            generated_loc.display(),
+        );
     }
 
     Ok(())
@@ -215,7 +358,16 @@ fn run_install(
         },
     ];
     debug!("running `{}` with args `{:?}`", &bootctl.display(), &args);
-    Command::new(&bootctl).args(args).status()?;
+    let status = Command::new(&bootctl).args(args).status()?;
+
+    if !status.success() {
+        return Err(format!(
+            "failed to run `{}` with args `{:?}`",
+            &bootctl.display(),
+            &args
+        )
+        .into());
+    }
 
     Ok(())
 }
@@ -234,7 +386,16 @@ fn run_update(
 
         let args = &["update", "--path", &esp.display().to_string()];
         debug!("running `{}` with args `{:?}`", &bootctl.display(), &args);
-        Command::new(&bootctl).args(args).status()?;
+        let status = Command::new(&bootctl).args(args).status()?;
+
+        if !status.success() {
+            return Err(format!(
+                "failed to run `{}` with args `{:?}`",
+                &bootctl.display(),
+                &args
+            )
+            .into());
+        }
     }
 
     Ok(())
@@ -264,7 +425,10 @@ mod tests {
     use super::*;
     use std::ffi::OsString;
 
-    fn scaffold(install: bool) -> (Args, Vec<Generation>, Generation) {
+    fn scaffold(
+        install: bool,
+        signing_info: Option<SigningInfo>,
+    ) -> (Args, Vec<Generation>, Generation, IdentifiedFiles) {
         let args = Args {
             toplevel: PathBuf::from("toplevel"),
             dry_run: false,
@@ -278,23 +442,29 @@ mod tests {
             esp: vec![PathBuf::from("esp")],
             can_touch_efi_vars: false,
             bootctl: Some(PathBuf::from("bootctl")),
+            unified_efi: false,
+            signing_info,
         };
         let system_generations = vec![
             Generation {
                 idx: 1,
                 profile: None,
                 path: PathBuf::from("1"),
-                conf_filename: OsString::from("nixos-generation-1.conf"),
-                kernel_filename: OsString::from("abcd-linux-5.12.9-bzImage.efi"),
-                initrd_filename: OsString::from("abcd-initrd-linux-5.12.9-initrd.efi"),
+                required_filenames: vec![
+                    OsString::from("nixos-generation-1.conf"),
+                    OsString::from("abcd-linux-5.12.9-bzImage.efi"),
+                    OsString::from("abcd-initrd-linux-5.12.9-initrd.efi"),
+                ],
             },
             Generation {
                 idx: 2,
                 profile: None,
                 path: PathBuf::from("2"),
-                conf_filename: OsString::from("nixos-generation-2.conf"),
-                kernel_filename: OsString::from("abcd-linux-5.12.9-bzImage.efi"),
-                initrd_filename: OsString::from("abcd-initrd-linux-5.12.9-initrd.efi"),
+                required_filenames: vec![
+                    OsString::from("nixos-generation-2.conf"),
+                    OsString::from("abcd-linux-5.12.9-bzImage.efi"),
+                    OsString::from("abcd-initrd-linux-5.12.9-initrd.efi"),
+                ],
             },
         ];
         let wanted_generations =
@@ -303,130 +473,203 @@ mod tests {
             idx: 2,
             profile: None,
             path: PathBuf::from("2"),
-            conf_filename: OsString::from("nixos-generation-2.conf"),
-            kernel_filename: OsString::from("abcd-linux-5.12.9-bzImage.efi"),
-            initrd_filename: OsString::from("abcd-initrd-linux-5.12.9-initrd.efi"),
+            required_filenames: vec![
+                OsString::from("nixos-generation-2.conf"),
+                OsString::from("abcd-linux-5.12.9-bzImage.efi"),
+                OsString::from("abcd-initrd-linux-5.12.9-initrd.efi"),
+            ],
+        };
+        let identified_files = IdentifiedFiles {
+            to_sign: vec![
+                PathBuf::from("abcd-linux-5.12.9-bzImage.efi"),
+                PathBuf::from("abcd-initrd-linux-5.12.9-initrd.efi"),
+            ],
+            to_replace: vec![],
         };
 
-        (args, wanted_generations, default_generation)
+        (
+            args,
+            wanted_generations,
+            default_generation,
+            identified_files,
+        )
     }
 
     #[test]
     fn test_update_plan() {
-        let (args, wanted_generations, default_generation) = scaffold(false);
+        let (args, wanted_generations, default_generation, identified_files) =
+            scaffold(false, None);
         let systemd_version = SystemdVersion::new(247);
         let bootloader_version = SystemdBootVersion::new(246);
         let bootctl = args.bootctl.as_ref().unwrap();
         let esp = &args.esp[0];
-
-        let plan = create_plan(
-            &args,
+        let plan_args = PlanArgs {
+            args: &args,
             bootctl,
             esp,
-            Some(bootloader_version),
+            bootloader_version: Some(bootloader_version),
             systemd_version,
-            &wanted_generations,
-            &default_generation,
-        )
-        .unwrap();
-        dbg!(&plan);
-        let mut iter = plan.into_iter();
+            wanted_generations: &wanted_generations,
+            default_generation: &default_generation,
+            identified_files,
+        };
 
-        assert_eq!(iter.next().unwrap(), SystemdBootPlanState::Start);
+        let plan = create_plan(plan_args).unwrap();
+        dbg!(&plan);
+
         assert_eq!(
-            iter.next().unwrap(),
-            SystemdBootPlanState::Update {
-                bootloader_version: SystemdBootVersion::new(246),
-                systemd_version: SystemdVersion::new(247),
-                bootctl,
-                esp,
-            }
+            plan,
+            vec![
+                SystemdBootPlanState::Start,
+                SystemdBootPlanState::Update {
+                    bootloader_version: SystemdBootVersion::new(246),
+                    systemd_version: SystemdVersion::new(247),
+                    bootctl,
+                    esp,
+                },
+                SystemdBootPlanState::PruneFiles {
+                    wanted_generations: &wanted_generations,
+                    paths: vec![&args.generated_entries, esp],
+                },
+                SystemdBootPlanState::ReplaceFiles {
+                    signing_info: &None,
+                    to_replace: vec![],
+                },
+                SystemdBootPlanState::WriteLoader {
+                    path: args.generated_entries.join("loader/loader.conf"),
+                    timeout: args.timeout,
+                    index: default_generation.idx,
+                    editor: args.editor,
+                    console_mode: &args.console_mode,
+                },
+                SystemdBootPlanState::CopyToEsp {
+                    generated_entries: &args.generated_entries,
+                    esp,
+                },
+                SystemdBootPlanState::Syncfs { esp },
+                SystemdBootPlanState::End
+            ]
         );
-        assert_eq!(
-            iter.next().unwrap(),
-            SystemdBootPlanState::Prune {
-                wanted_generations: &wanted_generations,
-                paths: vec![&args.generated_entries, esp],
-            }
-        );
-        assert_eq!(
-            iter.next().unwrap(),
-            SystemdBootPlanState::WriteLoader {
-                path: args.generated_entries.join("loader/loader.conf"),
-                timeout: args.timeout,
-                index: default_generation.idx,
-                editor: args.editor,
-                console_mode: &args.console_mode,
-            }
-        );
-        assert_eq!(
-            iter.next().unwrap(),
-            SystemdBootPlanState::CopyToEsp {
-                generated_entries: &args.generated_entries,
-                esp,
-            }
-        );
-        assert_eq!(iter.next().unwrap(), SystemdBootPlanState::Syncfs { esp });
-        assert_eq!(iter.next().unwrap(), SystemdBootPlanState::End);
-        assert_eq!(iter.next(), None);
     }
 
     #[test]
     fn test_install_plan() {
-        let (args, wanted_generations, default_generation) = scaffold(true);
+        let (args, wanted_generations, default_generation, identified_files) = scaffold(true, None);
         let systemd_version = SystemdVersion::new(247);
         let bootctl = args.bootctl.as_ref().unwrap();
         let esp = &args.esp[0];
-
-        let plan = create_plan(
-            &args,
+        let plan_args = PlanArgs {
+            args: &args,
             bootctl,
             esp,
-            None,
+            bootloader_version: None,
             systemd_version,
-            &wanted_generations,
-            &default_generation,
-        )
-        .unwrap();
-        dbg!(&plan);
-        let mut iter = plan.into_iter();
+            wanted_generations: &wanted_generations,
+            default_generation: &default_generation,
+            identified_files,
+        };
 
-        assert_eq!(iter.next().unwrap(), SystemdBootPlanState::Start);
+        let plan = create_plan(plan_args).unwrap();
+        dbg!(&plan);
+
         assert_eq!(
-            iter.next().unwrap(),
-            SystemdBootPlanState::Install {
-                loader: None,
-                bootctl,
-                esp,
-                can_touch_efi_vars: args.can_touch_efi_vars,
-            }
+            plan,
+            vec![
+                SystemdBootPlanState::Start,
+                SystemdBootPlanState::Install {
+                    loader: None,
+                    bootctl,
+                    esp,
+                    can_touch_efi_vars: args.can_touch_efi_vars,
+                },
+                SystemdBootPlanState::PruneFiles {
+                    wanted_generations: &wanted_generations,
+                    paths: vec![&args.generated_entries, esp],
+                },
+                SystemdBootPlanState::ReplaceFiles {
+                    signing_info: &None,
+                    to_replace: vec![],
+                },
+                SystemdBootPlanState::WriteLoader {
+                    path: args.generated_entries.join("loader/loader.conf"),
+                    timeout: args.timeout,
+                    index: default_generation.idx,
+                    editor: args.editor,
+                    console_mode: &args.console_mode,
+                },
+                SystemdBootPlanState::CopyToEsp {
+                    generated_entries: &args.generated_entries,
+                    esp,
+                },
+                SystemdBootPlanState::Syncfs { esp },
+                SystemdBootPlanState::End
+            ]
         );
+    }
+
+    #[test]
+    fn test_sign_plan() {
+        let signing_info = SigningInfo {
+            signing_key: PathBuf::from("db.key"),
+            signing_cert: PathBuf::from("db.crt"),
+            sbsign: PathBuf::from("sbsign"),
+            sbverify: PathBuf::from("sbverify"),
+        };
+        let (args, wanted_generations, default_generation, identified_files) =
+            scaffold(false, Some(signing_info));
+        let systemd_version = SystemdVersion::new(247);
+        let bootloader_version = SystemdBootVersion::new(246);
+        let bootctl = args.bootctl.as_ref().unwrap();
+        let esp = &args.esp[0];
+        let plan_args = PlanArgs {
+            args: &args,
+            bootctl,
+            esp,
+            bootloader_version: Some(bootloader_version),
+            systemd_version,
+            wanted_generations: &wanted_generations,
+            default_generation: &default_generation,
+            identified_files: identified_files.clone(),
+        };
+
+        let plan = create_plan(plan_args).unwrap();
+
         assert_eq!(
-            iter.next().unwrap(),
-            SystemdBootPlanState::Prune {
-                wanted_generations: &wanted_generations,
-                paths: vec![&args.generated_entries, esp],
-            }
+            plan,
+            vec![
+                SystemdBootPlanState::Start,
+                SystemdBootPlanState::Update {
+                    bootloader_version: SystemdBootVersion::new(246),
+                    systemd_version: SystemdVersion::new(247),
+                    bootctl,
+                    esp,
+                },
+                SystemdBootPlanState::PruneFiles {
+                    wanted_generations: &wanted_generations,
+                    paths: vec![&args.generated_entries, esp],
+                },
+                SystemdBootPlanState::SignFiles {
+                    signing_info: args.signing_info.as_ref().unwrap(),
+                    to_sign: identified_files.to_sign
+                },
+                SystemdBootPlanState::ReplaceFiles {
+                    signing_info: &args.signing_info,
+                    to_replace: vec![],
+                },
+                SystemdBootPlanState::WriteLoader {
+                    path: args.generated_entries.join("loader/loader.conf"),
+                    timeout: args.timeout,
+                    index: default_generation.idx,
+                    editor: args.editor,
+                    console_mode: &args.console_mode,
+                },
+                SystemdBootPlanState::CopyToEsp {
+                    generated_entries: &args.generated_entries,
+                    esp,
+                },
+                SystemdBootPlanState::Syncfs { esp },
+                SystemdBootPlanState::End
+            ]
         );
-        assert_eq!(
-            iter.next().unwrap(),
-            SystemdBootPlanState::WriteLoader {
-                path: args.generated_entries.join("loader/loader.conf"),
-                timeout: args.timeout,
-                index: default_generation.idx,
-                editor: args.editor,
-                console_mode: &args.console_mode,
-            }
-        );
-        assert_eq!(
-            iter.next().unwrap(),
-            SystemdBootPlanState::CopyToEsp {
-                generated_entries: &args.generated_entries,
-                esp,
-            }
-        );
-        assert_eq!(iter.next().unwrap(), SystemdBootPlanState::Syncfs { esp });
-        assert_eq!(iter.next().unwrap(), SystemdBootPlanState::End);
-        assert_eq!(iter.next(), None);
     }
 }

@@ -15,14 +15,15 @@ lazy_static::lazy_static! {
     static ref GENERATION_RE: Regex = Regex::new("/(?P<profile>[^-]+)-(?P<generation>\\d+)-link").unwrap();
 }
 
+const STORE_PATH_PREFIX: &str = "/nix/store/";
+const STORE_HASH_LEN: usize = 32;
+
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Generation {
     pub idx: usize,
     pub profile: Option<String>,
     pub path: PathBuf,
-    pub conf_filename: OsString,
-    pub kernel_filename: OsString,
-    pub initrd_filename: OsString,
+    pub required_filenames: Vec<OsString>,
 }
 
 pub fn wanted_generations(
@@ -48,7 +49,7 @@ pub fn wanted_generations(
     generations
 }
 
-pub fn all_generations(profile: Option<String>) -> Result<Vec<Generation>> {
+pub fn all_generations(profile: Option<String>, unified: bool) -> Result<Vec<Generation>> {
     let mut generations = Vec::new();
     let profile_path = self::profile_path(&profile);
     let pat = format!("{}-*-link", profile_path);
@@ -63,23 +64,34 @@ pub fn all_generations(profile: Option<String>) -> Result<Vec<Generation>> {
             .as_str()
             .parse::<usize>()?;
 
-        let kernel_path = fs::canonicalize(path.join("kernel"))?;
-        let kernel_filename = self::store_path_to_filename(kernel_path)?;
-        let initrd_path = fs::canonicalize(path.join("initrd"))?;
-        let initrd_filename = self::store_path_to_filename(initrd_path)?;
         let conf_filename = if let Some(profile) = &profile {
             format!("nixos-{}-generation-{}.conf", profile, idx)
         } else {
             format!("nixos-generation-{}.conf", idx)
         };
 
+        let required_filenames = if unified {
+            let path = fs::canonicalize(&path)?;
+            let filename = format!(
+                "{}.efi",
+                &path.display().to_string().replace(STORE_PATH_PREFIX, "")[..STORE_HASH_LEN]
+            );
+
+            vec![filename.into(), conf_filename.into()]
+        } else {
+            let kernel_path = fs::canonicalize(path.join("kernel"))?;
+            let kernel_filename = self::store_path_to_filename(kernel_path)?;
+            let initrd_path = fs::canonicalize(path.join("initrd"))?;
+            let initrd_filename = self::store_path_to_filename(initrd_path)?;
+
+            vec![kernel_filename, initrd_filename, conf_filename.into()]
+        };
+
         generations.push(Generation {
             idx,
             profile: profile.clone(),
             path,
-            conf_filename: conf_filename.into(),
-            kernel_filename,
-            initrd_filename,
+            required_filenames,
         });
     }
 
@@ -91,11 +103,11 @@ pub fn all_generations(profile: Option<String>) -> Result<Vec<Generation>> {
 pub fn store_path_to_filename(path: PathBuf) -> Result<OsString> {
     let s = path.to_string_lossy();
 
-    if !s.starts_with("/nix/store/") {
+    if !s.starts_with(STORE_PATH_PREFIX) {
         return Err("provided path wasn't a Nix store path".into());
     }
 
-    let s = s.replace("/nix/store/", "").replace("/", "-") + ".efi";
+    let s = s.replace(STORE_PATH_PREFIX, "").replace("/", "-") + ".efi";
 
     Ok(s.into())
 }
@@ -234,13 +246,13 @@ mod tests {
                 Generation {
                     idx: 1,
                     profile: None,
-                    conf_filename: OsString::from("nixos-generation-1.conf"),
+                    required_filenames: vec![OsString::from("nixos-generation-1.conf")],
                     ..Default::default()
                 },
                 Generation {
                     idx: 2,
                     profile: None,
-                    conf_filename: OsString::from("nixos-generation-2.conf"),
+                    required_filenames: vec![OsString::from("nixos-generation-2.conf")],
                     ..Default::default()
                 },
             ],
@@ -248,13 +260,13 @@ mod tests {
                 Generation {
                     idx: 1,
                     profile: Some(String::from("test")),
-                    conf_filename: OsString::from("nixos-test-generation-1.conf"),
+                    required_filenames: vec![OsString::from("nixos-generation-1.conf")],
                     ..Default::default()
                 },
                 Generation {
                     idx: 2,
                     profile: Some(String::from("test")),
-                    conf_filename: OsString::from("nixos-test-generation-2.conf"),
+                    required_filenames: vec![OsString::from("nixos-generation-2.conf")],
                     ..Default::default()
                 },
             ],

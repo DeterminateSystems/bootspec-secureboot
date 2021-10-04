@@ -6,15 +6,23 @@ use std::path::PathBuf;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
+pub mod bootable;
 pub mod grub;
 pub mod systemd_boot;
 
-#[derive(Debug, Default, Deserialize, Serialize, PartialEq, Eq, Hash)]
-struct SpecialisationName(String);
-#[derive(Debug, Default, Deserialize, Serialize)]
-struct SystemConfigurationRoot(PathBuf);
-#[derive(Debug, Default, Deserialize, Serialize)]
-struct BootJsonPath(PathBuf);
+#[derive(Debug, Default)]
+pub struct Generation {
+    pub index: usize,
+    pub profile: Option<String>,
+    pub bootspec: BootJson,
+}
+
+#[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
+pub struct SpecialisationName(pub String);
+#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+pub struct SystemConfigurationRoot(pub PathBuf);
+#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+pub struct BootJsonPath(pub PathBuf);
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,7 +50,7 @@ pub struct BootJsonV1 {
 }
 
 pub type BootJson = BootJsonV1;
-pub(crate) type Result<T, E = Box<dyn Error + Send + Sync + 'static>> = core::result::Result<T, E>;
+pub type Result<T, E = Box<dyn Error + Send + Sync + 'static>> = core::result::Result<T, E>;
 
 pub const SCHEMA_VERSION: usize = 1;
 pub const JSON_FILENAME: &str = "boot.v1.json";
@@ -64,21 +72,19 @@ pub fn get_json(generation_path: PathBuf) -> BootJson {
     json
 }
 
-pub fn parse_generation(generation: &str) -> (usize, Option<String>) {
-    if PROFILE_RE.is_match(&generation) {
-        let caps = PROFILE_RE.captures(&generation).unwrap();
-        let i = caps["generation"].parse::<usize>().unwrap();
+pub fn parse_generation(generation: &str) -> Result<(usize, Option<String>)> {
+    if PROFILE_RE.is_match(generation) {
+        let caps = PROFILE_RE.captures(generation).unwrap();
+        let i = caps["generation"].parse::<usize>()?;
 
-        (i, Some(caps["profile"].to_string()))
-    } else if SYSTEM_RE.is_match(&generation) {
-        let caps = SYSTEM_RE.captures(&generation).unwrap();
-        let i = caps["generation"].parse::<usize>().unwrap();
+        Ok((i, Some(caps["profile"].to_string())))
+    } else if SYSTEM_RE.is_match(generation) {
+        let caps = SYSTEM_RE.captures(generation).unwrap();
+        let i = caps["generation"].parse::<usize>()?;
 
-        (i, None)
+        Ok((i, None))
     } else {
-        // TODO: for now, this is just for testing; could this be feasibly hit in real-world use?
-        // maybe check all generations of ever profile to see if their realpath matches?
-        (0, None)
+        Err("generation wasn't a system or profile generation".into())
     }
 }
 

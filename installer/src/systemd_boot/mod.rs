@@ -7,6 +7,8 @@ use std::path::Path;
 use log::{debug, trace, warn};
 use regex::Regex;
 
+use crate::files::IdentifiedFiles;
+use crate::systemd_boot::plan::PlanArgs;
 use crate::systemd_boot::version::systemd::SystemdVersion;
 use crate::systemd_boot::version::systemd_boot::SystemdBootVersion;
 use crate::util::{self, Generation};
@@ -30,7 +32,7 @@ pub(crate) fn install(args: Args) -> Result<()> {
     let esps = &args.esp;
     let bootctl = args.bootctl.as_ref().expect("bootctl was missing");
     let systemd_version = SystemdVersion::detect_version(bootctl)?;
-    let system_generations = util::all_generations(None)?;
+    let system_generations = util::all_generations(None, args.unified_efi)?;
     let wanted_generations = util::wanted_generations(system_generations, args.configuration_limit);
     let default_generation = wanted_generations
         .iter()
@@ -48,20 +50,27 @@ pub(crate) fn install(args: Args) -> Result<()> {
                 return Err(e);
             }
         };
+        let identified_files = IdentifiedFiles::new(&args.generated_entries, esp)?;
 
-        let plan = plan::create_plan(
-            &args,
+        let plan_args = PlanArgs {
+            args: &args,
             bootctl,
             esp,
             bootloader_version,
             systemd_version,
-            &wanted_generations,
+            wanted_generations: &wanted_generations,
             default_generation,
-        )?;
+            identified_files,
+        };
+
+        let plan = plan::create_plan(plan_args)?;
 
         if args.dry_run {
             writeln!(std::io::stdout(), "{:#?}", plan)?;
         } else {
+            fs::create_dir_all(esp.join("efi/nixos"))?;
+            fs::create_dir_all(esp.join("loader/entries"))?;
+
             plan::consume_plan(plan)?;
         }
     }
@@ -69,7 +78,7 @@ pub(crate) fn install(args: Args) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn create_loader_conf(
+fn create_loader_conf(
     timeout: Option<usize>,
     idx: usize,
     editor: bool,
@@ -93,13 +102,11 @@ pub(crate) fn create_loader_conf(
     Ok(s)
 }
 
-pub(crate) fn get_required_filenames(generations: Vec<Generation>) -> Vec<OsString> {
+fn get_required_filenames(generations: Vec<Generation>) -> Vec<OsString> {
     let mut required_filenames = Vec::new();
 
     for generation in generations {
-        required_filenames.push(generation.conf_filename);
-        required_filenames.push(generation.kernel_filename);
-        required_filenames.push(generation.initrd_filename);
+        required_filenames.extend(generation.required_filenames);
     }
 
     required_filenames
@@ -184,17 +191,21 @@ console-mode max
             Generation {
                 idx: 1,
                 profile: None,
-                conf_filename: OsString::from("nixos-generation-1.conf"),
-                kernel_filename: OsString::from("kernel-1"),
-                initrd_filename: OsString::from("initrd-1"),
+                required_filenames: vec![
+                    OsString::from("nixos-generation-1.conf"),
+                    OsString::from("kernel-1"),
+                    OsString::from("initrd-1"),
+                ],
                 ..Default::default()
             },
             Generation {
                 idx: 2,
                 profile: None,
-                conf_filename: OsString::from("nixos-generation-2.conf"),
-                kernel_filename: OsString::from("kernel-2"),
-                initrd_filename: OsString::from("initrd-2"),
+                required_filenames: vec![
+                    OsString::from("nixos-generation-2.conf"),
+                    OsString::from("kernel-2"),
+                    OsString::from("initrd-2"),
+                ],
                 ..Default::default()
             },
         ];
@@ -202,9 +213,18 @@ console-mode max
         let required_filenames = super::get_required_filenames(generations.clone());
 
         for gen in generations {
-            assert!(required_filenames.iter().any(|e| e == &gen.conf_filename));
-            assert!(required_filenames.iter().any(|e| e == &gen.kernel_filename));
-            assert!(required_filenames.iter().any(|e| e == &gen.initrd_filename));
+            assert!(gen
+                .required_filenames
+                .iter()
+                .any(|e| required_filenames.contains(e)));
+            assert!(gen
+                .required_filenames
+                .iter()
+                .any(|e| required_filenames.contains(e)));
+            assert!(gen
+                .required_filenames
+                .iter()
+                .any(|e| required_filenames.contains(e)));
         }
     }
 }
