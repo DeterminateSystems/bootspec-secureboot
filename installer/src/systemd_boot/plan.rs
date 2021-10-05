@@ -9,7 +9,6 @@ use crc::{Crc, CRC_32_ISCSI};
 use log::{debug, error, info, trace, warn};
 
 use super::version::systemd::SystemdVersion;
-use super::version::systemd_boot::SystemdBootVersion;
 use crate::files::{FileToReplace, IdentifiedFiles};
 use crate::secure_boot::SigningInfo;
 use crate::util::{self, Generation};
@@ -27,8 +26,6 @@ pub(crate) enum SystemdBootPlanState<'a> {
         can_touch_efi_vars: bool,
     },
     Update {
-        bootloader_version: SystemdBootVersion,
-        systemd_version: SystemdVersion,
         bootctl: &'a Path,
         esp: &'a Path,
     },
@@ -68,8 +65,6 @@ pub(crate) struct PlanArgs<'a> {
     pub args: &'a Args,
     pub bootctl: &'a Path,
     pub esp: &'a Path,
-    pub bootloader_version: Option<SystemdBootVersion>,
-    pub systemd_version: SystemdVersion,
     pub wanted_generations: &'a [Generation],
     pub default_generation: &'a Generation,
     pub identified_files: IdentifiedFiles,
@@ -79,8 +74,6 @@ pub(crate) fn create_plan(plan_args: PlanArgs) -> Result<SystemdBootPlan> {
     let args = plan_args.args;
     let bootctl = plan_args.bootctl;
     let esp = plan_args.esp;
-    let bootloader_version = plan_args.bootloader_version;
-    let systemd_version = plan_args.systemd_version;
     let wanted_generations = plan_args.wanted_generations;
     let default_generation = plan_args.default_generation;
     let identified_files = plan_args.identified_files;
@@ -97,16 +90,7 @@ pub(crate) fn create_plan(plan_args: PlanArgs) -> Result<SystemdBootPlan> {
             can_touch_efi_vars: args.can_touch_efi_vars,
         });
     } else {
-        // We require a bootloader_version when updating (the default operation), so this is safe to unwrap.
-        let bootloader_version =
-            bootloader_version.expect("bootloader version was None, but we're updating");
-
-        plan.push(SystemdBootPlanState::Update {
-            bootloader_version,
-            systemd_version,
-            bootctl,
-            esp,
-        });
+        plan.push(SystemdBootPlanState::Update { bootctl, esp });
     }
 
     // Remove old things from both the generated entries and ESP
@@ -166,14 +150,9 @@ pub(crate) fn consume_plan(plan: SystemdBootPlan) -> Result<()> {
                 trace!("installing systemd-boot");
                 self::run_install(loader, bootctl, esp, can_touch_efi_vars)?;
             }
-            Update {
-                bootloader_version,
-                systemd_version,
-                bootctl,
-                esp,
-            } => {
+            Update { bootctl, esp } => {
                 trace!("updating systemd-boot");
-                self::run_update(bootloader_version, systemd_version, bootctl, esp)?;
+                self::run_update(bootctl, esp)?;
             }
             PruneFiles {
                 wanted_generations,
@@ -372,30 +351,21 @@ fn run_install(
     Ok(())
 }
 
-fn run_update(
-    bootloader_version: SystemdBootVersion,
-    systemd_version: SystemdVersion,
-    bootctl: &Path,
-    esp: &Path,
-) -> Result<()> {
-    if bootloader_version < systemd_version {
-        info!(
-            "updating systemd-boot from {} to {}",
-            bootloader_version.version, systemd_version.version
-        );
+fn run_update(bootctl: &Path, esp: &Path) -> Result<()> {
+    let systemd_version = SystemdVersion::detect_version(bootctl)?;
+    info!("updating systemd-boot to {}", systemd_version.version);
 
-        let args = &["update", "--path", &esp.display().to_string()];
-        debug!("running `{}` with args `{:?}`", &bootctl.display(), &args);
-        let status = Command::new(&bootctl).args(args).status()?;
+    let args = &["update", "--path", &esp.display().to_string()];
+    debug!("running `{}` with args `{:?}`", &bootctl.display(), &args);
+    let status = Command::new(&bootctl).args(args).status()?;
 
-        if !status.success() {
-            return Err(format!(
-                "failed to run `{}` with args `{:?}`",
-                &bootctl.display(),
-                &args
-            )
-            .into());
-        }
+    if !status.success() {
+        return Err(format!(
+            "failed to run `{}` with args `{:?}`",
+            &bootctl.display(),
+            &args
+        )
+        .into());
     }
 
     Ok(())
@@ -499,16 +469,12 @@ mod tests {
     fn test_update_plan() {
         let (args, wanted_generations, default_generation, identified_files) =
             scaffold(false, None);
-        let systemd_version = SystemdVersion::new(247);
-        let bootloader_version = SystemdBootVersion::new(246);
         let bootctl = args.bootctl.as_ref().unwrap();
         let esp = &args.esp[0];
         let plan_args = PlanArgs {
             args: &args,
             bootctl,
             esp,
-            bootloader_version: Some(bootloader_version),
-            systemd_version,
             wanted_generations: &wanted_generations,
             default_generation: &default_generation,
             identified_files,
@@ -521,12 +487,7 @@ mod tests {
             plan,
             vec![
                 SystemdBootPlanState::Start,
-                SystemdBootPlanState::Update {
-                    bootloader_version: SystemdBootVersion::new(246),
-                    systemd_version: SystemdVersion::new(247),
-                    bootctl,
-                    esp,
-                },
+                SystemdBootPlanState::Update { bootctl, esp },
                 SystemdBootPlanState::PruneFiles {
                     wanted_generations: &wanted_generations,
                     paths: vec![&args.generated_entries, esp],
@@ -555,15 +516,12 @@ mod tests {
     #[test]
     fn test_install_plan() {
         let (args, wanted_generations, default_generation, identified_files) = scaffold(true, None);
-        let systemd_version = SystemdVersion::new(247);
         let bootctl = args.bootctl.as_ref().unwrap();
         let esp = &args.esp[0];
         let plan_args = PlanArgs {
             args: &args,
             bootctl,
             esp,
-            bootloader_version: None,
-            systemd_version,
             wanted_generations: &wanted_generations,
             default_generation: &default_generation,
             identified_files,
@@ -617,16 +575,12 @@ mod tests {
         };
         let (args, wanted_generations, default_generation, identified_files) =
             scaffold(false, Some(signing_info));
-        let systemd_version = SystemdVersion::new(247);
-        let bootloader_version = SystemdBootVersion::new(246);
         let bootctl = args.bootctl.as_ref().unwrap();
         let esp = &args.esp[0];
         let plan_args = PlanArgs {
             args: &args,
             bootctl,
             esp,
-            bootloader_version: Some(bootloader_version),
-            systemd_version,
             wanted_generations: &wanted_generations,
             default_generation: &default_generation,
             identified_files: identified_files.clone(),
@@ -638,12 +592,7 @@ mod tests {
             plan,
             vec![
                 SystemdBootPlanState::Start,
-                SystemdBootPlanState::Update {
-                    bootloader_version: SystemdBootVersion::new(246),
-                    systemd_version: SystemdVersion::new(247),
-                    bootctl,
-                    esp,
-                },
+                SystemdBootPlanState::Update { bootctl, esp },
                 SystemdBootPlanState::PruneFiles {
                     wanted_generations: &wanted_generations,
                     paths: vec![&args.generated_entries, esp],

@@ -9,8 +9,6 @@ use regex::Regex;
 
 use crate::files::IdentifiedFiles;
 use crate::systemd_boot::plan::PlanArgs;
-use crate::systemd_boot::version::systemd::SystemdVersion;
-use crate::systemd_boot::version::systemd_boot::SystemdBootVersion;
 use crate::util::{self, Generation};
 use crate::{Args, Result};
 
@@ -31,7 +29,6 @@ pub(crate) fn install(args: Args) -> Result<()> {
 
     let esps = &args.esp;
     let bootctl = args.bootctl.as_ref().expect("bootctl was missing");
-    let systemd_version = SystemdVersion::detect_version(bootctl)?;
     let system_generations = util::all_generations(None, args.unified_efi)?;
     let wanted_generations = util::wanted_generations(system_generations, args.configuration_limit);
     let default_generation = wanted_generations
@@ -43,21 +40,12 @@ pub(crate) fn install(args: Args) -> Result<()> {
         .ok_or("couldn't find generation that corresponds to the provided toplevel")?;
 
     for esp in esps {
-        let bootloader_version = match SystemdBootVersion::detect_version(bootctl, esp) {
-            Ok(v) => Some(v),
-            Err(_) if args.install => None,
-            Err(e) => {
-                return Err(e);
-            }
-        };
         let identified_files = IdentifiedFiles::new(&args.generated_entries, esp)?;
 
         let plan_args = PlanArgs {
             args: &args,
             bootctl,
             esp,
-            bootloader_version,
-            systemd_version,
             wanted_generations: &wanted_generations,
             default_generation,
             identified_files,
