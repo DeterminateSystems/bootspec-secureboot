@@ -1,49 +1,20 @@
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
-use std::path::PathBuf;
+use std::path::Path;
 
-use serde::{Deserialize, Serialize};
+use bootspec::{
+    BootJson, BootJsonPath, SpecialisationName, SystemConfigurationRoot, JSON_FILENAME,
+    SCHEMA_VERSION,
+};
 
-#[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq, Eq, Hash)]
-pub struct SpecialisationName(pub String);
-#[derive(Debug, Default, Clone, Deserialize, Serialize)]
-pub struct SystemConfigurationRoot(pub PathBuf);
-#[derive(Debug, Default, Clone, Deserialize, Serialize)]
-pub struct BootJsonPath(pub PathBuf);
-
-#[derive(Debug, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BootJsonV1 {
-    /// The version of the boot.json schema
-    schema_version: usize,
-    /// NixOS version
-    system_version: String,
-    /// Path to kernel (bzImage) -- $toplevel/kernel
-    kernel: PathBuf,
-    /// Kernel version
-    kernel_version: String,
-    /// list of kernel parameters
-    kernel_params: Vec<String>,
-    /// Path to the init script
-    init: PathBuf,
-    /// Path to initrd -- $toplevel/initrd
-    initrd: PathBuf,
-    /// Path to "append-initrd-secrets" script -- $toplevel/append-initrd-secrets
-    initrd_secrets: PathBuf,
-    /// Mapping of specialisation names to their configuration's boot.json -- to add all specialisations as a boot entry
-    specialisation: HashMap<SpecialisationName, BootJsonPath>,
-    /// config.system.build.toplevel path
-    toplevel: SystemConfigurationRoot,
-}
-
-pub type BootJson = BootJsonV1;
+#[doc(hidden)]
 pub type Result<T, E = Box<dyn Error + Send + Sync + 'static>> = core::result::Result<T, E>;
 
-pub const SCHEMA_VERSION: usize = 1;
-pub const JSON_FILENAME: &str = "boot.v1.json";
-
-pub fn synthesize_schema_from_generation(generation: PathBuf) -> Result<BootJson> {
+/// Synthesize a [`BootJson`] struct from the path to a generation.
+///
+/// This is useful when used on generations that do not have a bootspec attached to it.
+pub fn synthesize_schema_from_generation(generation: &Path) -> Result<BootJson> {
     let generation = generation
         .canonicalize()
         .map_err(|e| format!("Failed to canonicalize generation dir:\n{}", e))?;
@@ -56,12 +27,12 @@ pub fn synthesize_schema_from_generation(generation: PathBuf) -> Result<BootJson
 
     let kernel_modules = fs::canonicalize(generation.join("kernel-modules/lib/modules"))
         .map_err(|e| format!("Failed to canonicalize the kernel modules dir:\n{}", e))?;
-    let kernel_glob = fs::read_dir(kernel_modules)
+    let versioned_kernel_modules = fs::read_dir(kernel_modules)
         .map_err(|e| format!("Failed to read kernel modules dir:\n{}", e))?
         .map(|res| res.map(|e| e.path()))
         .next()
         .ok_or("Could not find kernel version dir")??;
-    let kernel_version = kernel_glob
+    let kernel_version = versioned_kernel_modules
         .file_name()
         .ok_or("Could not get name of kernel version dir")?
         .to_str()
@@ -79,7 +50,7 @@ pub fn synthesize_schema_from_generation(generation: PathBuf) -> Result<BootJson
 
     let initrd_secrets = generation.join("append-initrd-secrets");
 
-    let mut specialisation: HashMap<SpecialisationName, BootJsonPath> = HashMap::new();
+    let mut specialisation: HashMap<SpecialisationName, Option<BootJsonPath>> = HashMap::new();
     for spec in fs::read_dir(generation.join("specialisation"))?.map(|res| res.map(|e| e.path())) {
         let spec = spec?;
         let name = spec
@@ -87,13 +58,17 @@ pub fn synthesize_schema_from_generation(generation: PathBuf) -> Result<BootJson
             .ok_or("Could not get name of specialisation dir")?
             .to_str()
             .ok_or("Specialisation dir name was invalid UTF8")?;
-        let boot_json = fs::canonicalize(
-            generation.join(format!("specialisation/{}/{}", name, JSON_FILENAME)),
-        )?;
+        let boot_json_path = generation.join(format!("specialisation/{}/{}", name, JSON_FILENAME));
+
+        let boot_path = if boot_json_path.exists() {
+            Some(fs::canonicalize(&boot_json_path)?)
+        } else {
+            None
+        };
 
         specialisation.insert(
             SpecialisationName(name.to_string()),
-            BootJsonPath(boot_json),
+            boot_path.map(BootJsonPath),
         );
     }
 

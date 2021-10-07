@@ -394,8 +394,9 @@ dependencies = [
 name = "synthesize"
 version = "0.1.0"
 dependencies = [
- "serde",
+ "bootspec",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]
