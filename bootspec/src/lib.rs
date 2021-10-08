@@ -16,7 +16,16 @@ pub struct SystemConfigurationRoot(pub PathBuf);
 /// A wrapper type describing the path to the bootspec schema file.
 pub struct BootJsonPath(pub PathBuf);
 
-// !!! IMPORTANT: KEEP THESE IN SYNC !!!
+#[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq, Eq)]
+/// Provides the information necessary to consume a specialisation with or without a bootspec.
+pub struct SpecialisationDescription {
+    /// The optional path to the specialisation's bootspec.
+    pub bootspec: Option<BootJsonPath>,
+    /// The specialisation's toplevel.
+    pub toplevel: SystemConfigurationRoot,
+}
+
+// !!! IMPORTANT: KEEP `BootJson`, `SCHEMA_VERSION`, and `JSON_FILENAME` IN SYNC !!!
 /// The current bootspec schema.
 pub type BootJson = v1::BootJsonV1;
 /// The current bootspec schema version.

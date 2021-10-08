@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{BootJsonPath, SpecialisationName, SystemConfigurationRoot};
+use crate::{SpecialisationDescription, SpecialisationName, SystemConfigurationRoot};
 
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -27,7 +27,7 @@ pub struct BootJsonV1 {
     pub initrd_secrets: PathBuf,
     /// Mapping of specialisation names to their boot.json (or `None` if it doesn't exist) and their
     /// toplevel
-    pub specialisation: HashMap<SpecialisationName, Option<BootJsonPath>>,
+    pub specialisation: HashMap<SpecialisationName, SpecialisationDescription>,
     /// config.system.build.toplevel path
     pub toplevel: SystemConfigurationRoot,
 }
