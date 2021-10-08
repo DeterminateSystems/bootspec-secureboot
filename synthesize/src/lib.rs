@@ -4,8 +4,8 @@ use std::fs;
 use std::path::Path;
 
 use bootspec::{
-    BootJson, BootJsonPath, SpecialisationName, SystemConfigurationRoot, JSON_FILENAME,
-    SCHEMA_VERSION,
+    BootJson, BootSpecPath, SpecialisationDescription, SpecialisationName, SystemConfigurationRoot,
+    JSON_FILENAME, SCHEMA_VERSION,
 };
 
 #[doc(hidden)]
@@ -50,7 +50,7 @@ pub fn synthesize_schema_from_generation(generation: &Path) -> Result<BootJson> 
 
     let initrd_secrets = generation.join("append-initrd-secrets");
 
-    let mut specialisation: HashMap<SpecialisationName, Option<BootJsonPath>> = HashMap::new();
+    let mut specialisation: HashMap<SpecialisationName, SpecialisationDescription> = HashMap::new();
     for spec in fs::read_dir(generation.join("specialisation"))?.map(|res| res.map(|e| e.path())) {
         let spec = spec?;
         let name = spec
@@ -58,17 +58,21 @@ pub fn synthesize_schema_from_generation(generation: &Path) -> Result<BootJson> 
             .ok_or("Could not get name of specialisation dir")?
             .to_str()
             .ok_or("Specialisation dir name was invalid UTF8")?;
-        let boot_json_path = generation.join(format!("specialisation/{}/{}", name, JSON_FILENAME));
+        let toplevel = fs::canonicalize(generation.join(format!("specialisation/{}", name)))?;
 
-        let boot_path = if boot_json_path.exists() {
-            Some(fs::canonicalize(&boot_json_path)?)
+        let boot_json_path = toplevel.join(JSON_FILENAME);
+        let boot_json_path = if boot_json_path.exists() {
+            Some(boot_json_path)
         } else {
             None
         };
 
         specialisation.insert(
             SpecialisationName(name.to_string()),
-            boot_path.map(BootJsonPath),
+            SpecialisationDescription {
+                toplevel: SystemConfigurationRoot(toplevel),
+                bootspec: boot_json_path.map(BootSpecPath),
+            },
         );
     }
 
