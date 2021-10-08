@@ -14,13 +14,13 @@ pub struct SystemConfigurationRoot(pub PathBuf);
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq, Eq)]
 /// A wrapper type describing the path to the bootspec schema file.
-pub struct BootJsonPath(pub PathBuf);
+pub struct BootSpecPath(pub PathBuf);
 
 #[derive(Debug, Default, Clone, Deserialize, Serialize, PartialEq, Eq)]
 /// Provides the information necessary to consume a specialisation with or without a bootspec.
 pub struct SpecialisationDescription {
     /// The optional path to the specialisation's bootspec.
-    pub bootspec: Option<BootJsonPath>,
+    pub bootspec: Option<BootSpecPath>,
     /// The specialisation's toplevel.
     pub toplevel: SystemConfigurationRoot,
 }
