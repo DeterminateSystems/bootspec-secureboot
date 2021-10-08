@@ -10,7 +10,7 @@ use crate::{BootJsonPath, SpecialisationName, SystemConfigurationRoot};
 /// V1 of the bootspec schema.
 pub struct BootJsonV1 {
     /// The version of the boot.json schema
-    pub schema_version: usize,
+    pub schema_version: u32,
     /// NixOS version
     pub system_version: String,
     /// Path to kernel (bzImage) -- $toplevel/kernel

@@ -20,6 +20,6 @@ pub struct BootJsonPath(pub PathBuf);
 /// The current bootspec schema.
 pub type BootJson = v1::BootJsonV1;
 /// The current bootspec schema version.
-pub const SCHEMA_VERSION: usize = 1;
+pub const SCHEMA_VERSION: u32 = 1;
 /// The current bootspec schema filename.
 pub const JSON_FILENAME: &str = "boot.v1.json";
