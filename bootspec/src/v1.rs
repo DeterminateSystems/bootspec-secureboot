@@ -5,6 +5,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{SpecialisationDescription, SpecialisationName, SystemConfigurationRoot};
 
+/// The V1 bootspec schema version.
+pub const SCHEMA_VERSION: u32 = 1;
+/// The V1 bootspec schema filename.
+pub const JSON_FILENAME: &str = "boot.v1.json";
+
 #[derive(Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 /// V1 of the bootspec schema.

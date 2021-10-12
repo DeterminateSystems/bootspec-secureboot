@@ -29,6 +29,6 @@ pub struct SpecialisationDescription {
 /// The current bootspec schema.
 pub type BootJson = v1::BootJsonV1;
 /// The current bootspec schema version.
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = v1::SCHEMA_VERSION;
 /// The current bootspec schema filename.
-pub const JSON_FILENAME: &str = "boot.v1.json";
+pub const JSON_FILENAME: &str = v1::JSON_FILENAME;
