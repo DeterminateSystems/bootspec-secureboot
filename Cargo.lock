@@ -88,12 +88,13 @@ dependencies = [
 name = "generator"
 version = "0.1.0"
 dependencies = [
+ "bootspec",
  "chrono",
  "lazy_static",
  "regex",
- "serde",
  "serde_json",
  "structopt",
+ "synthesize",
  "tempfile",
 ]
 

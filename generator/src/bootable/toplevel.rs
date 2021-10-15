@@ -2,9 +2,10 @@ use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
 
+use bootspec::{SpecialisationName, SystemConfigurationRoot};
 use chrono::{Local, TimeZone};
 
-use crate::{Result, SpecialisationName, SystemConfigurationRoot};
+use crate::Result;
 
 #[derive(Debug, Default)]
 pub struct BootableToplevel {
