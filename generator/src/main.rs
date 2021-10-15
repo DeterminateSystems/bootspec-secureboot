@@ -34,11 +34,20 @@ fn main() -> Result<()> {
         .filter_map(|gen| {
             generator::parse_generation(&gen)
                 .ok()
-                .map(|(index, profile)| Generation {
-                    index,
-                    profile,
-                    bootspec: generator::get_json(PathBuf::from(gen)),
+                .map(|(index, profile)| {
+                    let bootspec = generator::get_json(PathBuf::from(gen));
+
+                    if let Ok(bootspec) = bootspec {
+                        Some(Generation {
+                            index,
+                            profile,
+                            bootspec,
+                        })
+                    } else {
+                        None
+                    }
                 })
+                .flatten()
         })
         .collect::<Vec<_>>();
     let toplevels = bootable::flatten(generations)?;

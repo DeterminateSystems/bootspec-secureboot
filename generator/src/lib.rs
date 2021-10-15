@@ -23,16 +23,16 @@ lazy_static::lazy_static! {
     static ref PROFILE_RE: Regex = Regex::new("/system-profiles/(?P<profile>[^-]+)-(?P<generation>\\d+)-link").unwrap();
 }
 
-pub fn get_json(generation_path: PathBuf) -> BootJson {
+pub fn get_json(generation_path: PathBuf) -> Result<BootJson> {
     let json_path = generation_path.join(JSON_FILENAME);
     let json: BootJson = if json_path.exists() {
-        let contents = fs::read_to_string(&json_path).unwrap();
-        serde_json::from_str(&contents).unwrap()
+        let contents = fs::read_to_string(&json_path)?;
+        serde_json::from_str(&contents)?
     } else {
-        synthesize::synthesize_schema_from_generation(&generation_path).unwrap()
+        synthesize::synthesize_schema_from_generation(&generation_path)?
     };
 
-    json
+    Ok(json)
 }
 
 pub fn parse_generation(generation: &str) -> Result<(usize, Option<String>)> {
