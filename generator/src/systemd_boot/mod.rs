@@ -4,8 +4,10 @@ use std::os::unix;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use bootspec::SpecialisationName;
+
 use crate::bootable::{Bootable, BootableToplevel, EfiProgram};
-use crate::{Result, SpecialisationName};
+use crate::Result;
 
 // FIXME: placeholder dir
 pub const ROOT: &str = "systemd-boot-entries";

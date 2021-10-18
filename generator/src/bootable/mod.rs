@@ -1,7 +1,9 @@
 use std::fs;
 use std::io::{self, Write};
 
-use crate::{BootJson, Generation, Result, SpecialisationName};
+use bootspec::{BootJson, SpecialisationName};
+
+use crate::{Generation, Result};
 
 mod efi;
 mod toplevel;
@@ -49,16 +51,22 @@ fn flatten_impl(
             profile_name: input.profile.clone(),
         });
 
-        for (name, path) in input.bootspec.specialisation {
+        for (name, desc) in input.bootspec.specialisation {
+            let bootspec_path = if let Some(bootspec_path) = desc.bootspec {
+                bootspec_path.0
+            } else {
+                return Err(format!("Specialisation '{}' didn't have a bootspec", name.0).into());
+            };
+
             writeln!(
                 io::stderr(),
                 "Flattening specialisation '{name}' of toplevel {toplevel}: {path}",
                 toplevel = input.bootspec.toplevel.0.display(),
                 name = name.0,
-                path = path.0.display()
+                path = bootspec_path.display()
             )?;
 
-            let json = fs::read_to_string(&path.0)?;
+            let json = fs::read_to_string(&bootspec_path)?;
             let parsed: BootJson = serde_json::from_str(&json)?;
             let gen = Generation {
                 index: input.index,
