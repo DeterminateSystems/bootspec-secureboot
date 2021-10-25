@@ -28,58 +28,44 @@ At the moment, only `systemd-boot` is supported.
 
 > **NOTE:** Please note that only `systemd-boot` is supported at this time.
 
-In order to take this repository for a test drive, you must use a Nixpkgs that carries our related patches (please see our [`boot-spec`](https://github.com/DeterminateSystems/nixpkgs/commits/boot-spec) branch on our Nixpkgs fork for a list of these commits). Once you have an appropriately patched Nixpkgs, you may use the following configuration:
+In order to take this repository for a test drive, you must use a Nixpkgs that carries our related patches (please see our [`boot-spec`](https://github.com/DeterminateSystems/nixpkgs/commits/boot-spec) branch on our Nixpkgs fork for a list of these commits).
+
+### Flakes
+
+Use our Nixpkgs branch, add bootspec as an input, and add our module to your configuration:
 
 ```nix
-{ pkgs, lib, config, ... }:
+# flake.nix
 {
-  boot.loader.manual = {
-    enable = true;
-    installHook =
-      let
-        src = pkgs.fetchFromGitHub {
-          owner = "DeterminateSystems";
-          repo = "bootspec";
-          rev = "78ce788c739ff0b6cbab8982d9081c5efe8156f0";
-          sha256 = "sHEDerMHX5n5IAwPKyKzjn5KuCSAxR6ynETHcc1XLg8=";
-        };
+  inputs.nixpkgs.url = "github:DeterminateSystems/nixpkgs/boot-spec";
+  inputs.bootspec = {
+    url = "github:DeterminateSystems/bootspec/main";
+    inputs.nixpkgs.follows = "nixpkgs";
+  };
 
-        patched_sbattach = import (src + "/installer/patched-sbattach.nix") { inherit pkgs; };
-
-        experiment = pkgs.rustPlatform.buildRustPackage rec {
-          pname = "experiment";
-          version = "0";
-          inherit src;
-          cargoLock.lockFile = src + "/Cargo.lock";
-          buildType = "debug";
-          dontStrip = true;
-
-          postPatch = ''
-            substituteInPlace installer/build.rs \
-              --replace "@patched_sbattach@" "${patched_sbattach}"
-          '';
-        };
-      in
-      pkgs.writeShellScript "install-bootloader" ''
-        set -x
-        cd "$(mktemp -d)" || exit 1
-
-        ${experiment}/bin/generator /nix/var/nix/profiles/system-*-link \
-          --systemd-machine-id-setup "${pkgs.systemd}/bin/systemd-machine-id-setup"
-
-        ${experiment}/bin/installer \
-          --toplevel="$1" \
-          --esp="${config.boot.loader.efi.efiSysMountPoint}" \
-          ${lib.optionalString config.boot.loader.efi.canTouchEfiVariables "--touch-efi-vars"} \
-          --console-mode="${config.boot.loader.systemd-boot.consoleMode}" \
-          --timeout="${toString config.boot.loader.timeout}" \
-          --bootctl="${pkgs.systemd}/bin/bootctl" \
-          ${lib.optionalString (config.boot.loader.systemd-boot.configurationLimit != null) ''--configuration-limit="${toString config.boot.loader.systemd-boot.configurationLimit}"''} \
-          --generated-entries="./systemd-boot-entries"
-      '';
+  outputs = { self, nixpkgs, naersk, atuin, promptpass, bash-preexec, nix, bootspec }: {
+    nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        bootspec.nixosModules.bootspec
+        ./configuration.nix
+      ];
+    };
   };
 }
 ```
+
+### Without Flakes
+
+Use our fork of Nixpkgs's `boot-json` branch: https://github.com/DeterminateSystems/nixpkgs/tree/boot-json.
+
+```
+$ export NIX_PATH=nixpkgs=https://github.com/DeterminateSystems/nixpkgs/archive/refs/heads/boot-json.tar.gz
+```
+
+Once you have an appropriately patched Nixpkgs, you may use the following configuration:
+
+
 
 # License
 
