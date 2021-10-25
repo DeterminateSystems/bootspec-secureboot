@@ -21,7 +21,7 @@
     {
       devShell = forAllSystems ({ system, pkgs, ... }:
         pkgs.mkShell {
-          name = "bootloader-experimentation";
+          name = "bootspec";
 
           buildInputs = with pkgs; [
             cargo
@@ -38,7 +38,7 @@
           in
           {
             package = pkgs.rustPlatform.buildRustPackage rec {
-              pname = "bootloader-experimentation";
+              pname = "bootspec";
               version = "unreleased";
 
               src = self;
@@ -53,5 +53,14 @@
           });
 
       defaultPackage = forAllSystems ({ system, ... }: self.packages.${system}.package);
+
+      nixosModules.bootspec = {
+        imports = [ ./nixos-module.nix ];
+        nixpkgs.overlays = [
+          (final: prev: {
+            bootspec = self.defaultPackage."${final.system}";
+          })
+        ];
+      };
     };
 }
