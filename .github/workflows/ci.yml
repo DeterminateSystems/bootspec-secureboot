@@ -60,3 +60,11 @@ jobs:
             experimental-features = nix-command flakes
       - name: Check nixpkgs-fmt formatting
         run: nix develop --command sh -c "git ls-files '*.nix' | xargs nixpkgs-fmt --check"
+
+  EditorConfig:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - uses: greut/eclint-action@v0
