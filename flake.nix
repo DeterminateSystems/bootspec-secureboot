@@ -21,7 +21,7 @@
     {
       devShell = forAllSystems ({ system, pkgs, ... }:
         pkgs.mkShell {
-          name = "bootloader-experimentation";
+          name = "bootspec";
 
           buildInputs = with pkgs; [
             cargo
