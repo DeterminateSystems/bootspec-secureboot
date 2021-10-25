@@ -10,7 +10,7 @@ The `bootspec` crate provides various structures and constants useful for intera
 
 ### `synthesize`
 
-The `synthesize` crate provides a CLI that, when provided a path to a NixOS generation and an output file location, will synthesize a boot specification document from the available information. 
+The `synthesize` crate provides a CLI that, when provided a path to a NixOS generation and an output file location, will synthesize a boot specification document from the available information.
 
 ### `generator`
 
