@@ -326,18 +326,16 @@ fn run_install(
         fs::remove_file(&loader)?;
     }
 
-    let args = &[
-        "install",
-        "--path",
-        &esp.display().to_string(),
-        if !can_touch_efi_vars {
-            "--no-variables"
-        } else {
-            ""
-        },
+    let mut args = vec![
+        String::from("install"),
+        String::from("--path"),
+        esp.display().to_string(),
     ];
+    if !can_touch_efi_vars {
+        args.push(String::from("--no-variables"));
+    }
     debug!("running `{}` with args `{:?}`", &bootctl.display(), &args);
-    let status = Command::new(&bootctl).args(args).status()?;
+    let status = Command::new(&bootctl).args(&args).status()?;
 
     if !status.success() {
         return Err(format!(
