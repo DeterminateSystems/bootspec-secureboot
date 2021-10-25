@@ -57,15 +57,36 @@ Use our Nixpkgs branch, add bootspec as an input, and add our module to your con
 
 ### Without Flakes
 
-Use our fork of Nixpkgs's `boot-json` branch: https://github.com/DeterminateSystems/nixpkgs/tree/boot-json.
+Use our fork of Nixpkgs's `boot-spec` branch: https://github.com/DeterminateSystems/nixpkgs/tree/boot-spec.
+
+For example:
 
 ```
-$ export NIX_PATH=nixpkgs=https://github.com/DeterminateSystems/nixpkgs/archive/refs/heads/boot-json.tar.gz
+$ export "NIX_PATH=nixpkgs=https://github.com/DeterminateSystems/nixpkgs/archive/refs/heads/boot-spec.tar.gz:$NIX_PATH"
 ```
 
-Once you have an appropriately patched Nixpkgs, you may use the following configuration:
+Then create a `bootspec.nix` file which contains:
 
+```nix
+let
+  bootspecSrc = builtins.fetchGit {
+    url = "https://github.com/DeterminateSystems/bootspec.git";
+    ref = "main";
+  };
+in
+{
+  imports = [ "${bootspecSrc}/nixos-module.nix" ];
+  nixpkgs.overlays = [
+    (final: prev: {
+      bootspec = import bootspecSrc;
+    })
+  ];
+}
+```
 
+Then add the `bootspec.nix` to your NixOS system's `configuration.nix`.
+
+Then run `nixos-rebuild switch`.
 
 # License
 
