@@ -38,7 +38,7 @@
           in
           {
             package = pkgs.rustPlatform.buildRustPackage rec {
-              pname = "bootloader-experimentation";
+              pname = "bootspec";
               version = "unreleased";
 
               src = self;
