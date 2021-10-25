@@ -26,6 +26,7 @@
           buildInputs = with pkgs; [
             cargo
             codespell
+            nixpkgs-fmt
             rustfmt
           ];
         });

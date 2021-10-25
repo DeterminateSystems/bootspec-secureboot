@@ -45,3 +45,18 @@ jobs:
     - uses: codespell-project/codespell-problem-matcher@v1
     - name: Check Spelling
       run: nix develop --command codespell --ignore-words-list crate,pullrequest,pullrequests .
+
+  NixFormatting:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - uses: cachix/install-nix-action@v14
+        with:
+          install_url: https://nixos-nix-install-tests.cachix.org/serve/vij683ly7sl95nnhb67bdjjfabclr85m/install
+          install_options: '--tarball-url-prefix https://nixos-nix-install-tests.cachix.org/serve'
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Check nixpkgs-fmt formatting
+        run: nix develop --command sh -c "git ls-files '*.nix' | xargs nixpkgs-fmt --check"
