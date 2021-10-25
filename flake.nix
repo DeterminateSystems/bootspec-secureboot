@@ -53,5 +53,14 @@
           });
 
       defaultPackage = forAllSystems ({ system, ... }: self.packages.${system}.package);
+
+      nixosModules.bootspec = {
+        imports = [ ./nixos-module.nix ];
+        nixpkgs.overlays = [
+          (final: prev: {
+            bootspec = self.defaultPackage."${final.system}";
+          })
+        ];
+      };
     };
 }
