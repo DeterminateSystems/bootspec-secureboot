@@ -43,7 +43,7 @@ Use our Nixpkgs branch, add bootspec as an input, and add our module to your con
     inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = { self, nixpkgs, naersk, atuin, promptpass, bash-preexec, nix, bootspec }: {
+  outputs = { self, nixpkgs, bootspec }: {
     nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
       modules = [
