@@ -28,7 +28,7 @@ At the moment, only `systemd-boot` is supported.
 
 > **NOTE:** Please note that only `systemd-boot` is supported at this time.
 
-In order to take this repository for a test drive, you must use a Nixpkgs that carries our related patches (please see our [`boot-spec`](https://github.com/DeterminateSystems/nixpkgs/commits/boot-spec) branch on our Nixpkgs fork for a list of these commits).
+In order to take this repository for a test drive, you must use a Nixpkgs that carries our related patches (please see our [`boot-spec-unstable`](https://github.com/DeterminateSystems/nixpkgs/commits/boot-spec-unstable) branch on our Nixpkgs fork for a list of these commits).
 
 ### Flakes
 
@@ -37,7 +37,7 @@ Use our Nixpkgs branch, add bootspec as an input, and add our module to your con
 ```nix
 # flake.nix
 {
-  inputs.nixpkgs.url = "github:DeterminateSystems/nixpkgs/boot-spec";
+  inputs.nixpkgs.url = "github:DeterminateSystems/nixpkgs/boot-spec-unstable";
   inputs.bootspec = {
     url = "github:DeterminateSystems/bootspec/main";
     inputs.nixpkgs.follows = "nixpkgs";
@@ -57,12 +57,12 @@ Use our Nixpkgs branch, add bootspec as an input, and add our module to your con
 
 ### Without Flakes
 
-Use our fork of Nixpkgs's `boot-spec` branch: https://github.com/DeterminateSystems/nixpkgs/tree/boot-spec.
+Use our fork of Nixpkgs's `boot-spec-unstable` branch: https://github.com/DeterminateSystems/nixpkgs/tree/boot-spec-unstable.
 
 For example:
 
 ```
-$ export "NIX_PATH=nixpkgs=https://github.com/DeterminateSystems/nixpkgs/archive/refs/heads/boot-spec.tar.gz:$NIX_PATH"
+$ export "NIX_PATH=nixpkgs=https://github.com/DeterminateSystems/nixpkgs/archive/refs/heads/boot-spec-unstable.tar.gz:$NIX_PATH"
 ```
 
 Then create a `bootspec.nix` file which contains:
