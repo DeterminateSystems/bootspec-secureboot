@@ -22,17 +22,19 @@ in
       installHook = pkgs.writeShellScript "install-bootloader"
         (
           let
-            generatorArgs = lib.escapeShellArgs [
+            generatorArgs = lib.escapeShellArgs ([
               "--systemd-machine-id-setup"
               "${pkgs.systemd}/bin/systemd-machine-id-setup"
             ]
             ++ (lib.optionals config.boot.loader.secureboot.enable [
+              "--unified-efi"
+
               "--objcopy"
-              "${pkgs.binutils}/bin/objcopy"
+              "${pkgs.binutils-unwrapped}/bin/objcopy"
 
               "--systemd-efi-stub"
               "${pkgs.systemd}/lib/systemd/boot/efi/linuxx64.efi.stub"
-            ]);
+            ]));
 
             installerArgs = lib.escapeShellArgs
               ([
@@ -56,13 +58,13 @@ in
                 "--configuration-limit"
                 "${toString config.boot.loader.systemd-boot.configurationLimit}"
               ])
-              ++ (lib.optionals (config.boot.loader.secureboot.signingKey != null) [
+              ++ (lib.optionals (config.boot.loader.secureboot.signingKeyPath != null) [
                 "--signing-key"
-                config.boot.loader.secureboot.signingKey
+                config.boot.loader.secureboot.signingKeyPath
               ])
-              ++ (lib.optionals (config.boot.loader.secureboot.signingCert != null) [
-                "--signing-key"
-                config.boot.loader.secureboot.signingCert
+              ++ (lib.optionals (config.boot.loader.secureboot.signingCertPath != null) [
+                "--signing-cert"
+                config.boot.loader.secureboot.signingCertPath
               ])
               ++ (lib.optionals config.boot.loader.secureboot.enable [
                 "--sbsign"
