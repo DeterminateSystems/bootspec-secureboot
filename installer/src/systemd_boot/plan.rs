@@ -590,6 +590,10 @@ mod tests {
         };
 
         let plan = create_plan(plan_args).unwrap();
+        let mut to_sign = vec![];
+        to_sign.push(esp.join("EFI/systemd/systemd-bootx64.efi"));
+        to_sign.push(esp.join("EFI/BOOT/BOOTX64.EFI"));
+        to_sign.extend(identified_files.to_sign);
 
         assert_eq!(
             plan,
@@ -598,7 +602,7 @@ mod tests {
                 SystemdBootPlanState::Update { bootctl, esp },
                 SystemdBootPlanState::SignFiles {
                     signing_info: args.signing_info.as_ref().unwrap(),
-                    to_sign: identified_files.to_sign
+                    to_sign
                 },
                 SystemdBootPlanState::PruneFiles {
                     wanted_generations: &wanted_generations,
