@@ -93,6 +93,18 @@ pub(crate) fn create_plan(plan_args: PlanArgs) -> Result<SystemdBootPlan> {
         plan.push(SystemdBootPlanState::Update { bootctl, esp });
     }
 
+    if let Some(signing_info) = &args.signing_info {
+        let mut to_sign = vec![];
+        to_sign.push(esp.join("EFI/systemd/systemd-bootx64.efi"));
+        to_sign.push(esp.join("EFI/BOOT/BOOTX64.EFI"));
+        to_sign.extend(identified_files.to_sign);
+
+        plan.push(SystemdBootPlanState::SignFiles {
+            signing_info,
+            to_sign,
+        });
+    }
+
     // Remove old things from both the generated entries and ESP
     // - Generated entries because we don't need to waste space on copying unused kernels / initrds / entries
     // - ESP so that we don't have unbootable entries
@@ -100,13 +112,6 @@ pub(crate) fn create_plan(plan_args: PlanArgs) -> Result<SystemdBootPlan> {
         wanted_generations,
         paths: vec![&args.generated_entries, esp],
     });
-
-    if let Some(signing_info) = &args.signing_info {
-        plan.push(SystemdBootPlanState::SignFiles {
-            signing_info,
-            to_sign: identified_files.to_sign,
-        });
-    }
 
     plan.push(SystemdBootPlanState::ReplaceFiles {
         signing_info: &args.signing_info,
@@ -154,6 +159,16 @@ pub(crate) fn consume_plan(plan: SystemdBootPlan) -> Result<()> {
                 trace!("updating systemd-boot");
                 self::run_update(bootctl, esp)?;
             }
+            SignFiles {
+                signing_info,
+                to_sign,
+            } => {
+                trace!("signing efi files");
+
+                for file in to_sign {
+                    signing_info.sign_file(&file)?;
+                }
+            }
             PruneFiles {
                 wanted_generations,
                 paths,
@@ -167,16 +182,6 @@ pub(crate) fn consume_plan(plan: SystemdBootPlan) -> Result<()> {
                     );
 
                     super::remove_old_files(wanted_generations, path)?;
-                }
-            }
-            SignFiles {
-                signing_info,
-                to_sign,
-            } => {
-                trace!("signing efi files");
-
-                for file in to_sign {
-                    signing_info.sign_file(&file)?;
                 }
             }
             ReplaceFiles {
@@ -585,19 +590,23 @@ mod tests {
         };
 
         let plan = create_plan(plan_args).unwrap();
+        let mut to_sign = vec![];
+        to_sign.push(esp.join("EFI/systemd/systemd-bootx64.efi"));
+        to_sign.push(esp.join("EFI/BOOT/BOOTX64.EFI"));
+        to_sign.extend(identified_files.to_sign);
 
         assert_eq!(
             plan,
             vec![
                 SystemdBootPlanState::Start,
                 SystemdBootPlanState::Update { bootctl, esp },
+                SystemdBootPlanState::SignFiles {
+                    signing_info: args.signing_info.as_ref().unwrap(),
+                    to_sign
+                },
                 SystemdBootPlanState::PruneFiles {
                     wanted_generations: &wanted_generations,
                     paths: vec![&args.generated_entries, esp],
-                },
-                SystemdBootPlanState::SignFiles {
-                    signing_info: args.signing_info.as_ref().unwrap(),
-                    to_sign: identified_files.to_sign
                 },
                 SystemdBootPlanState::ReplaceFiles {
                     signing_info: &args.signing_info,

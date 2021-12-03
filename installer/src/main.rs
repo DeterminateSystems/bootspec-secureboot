@@ -100,12 +100,17 @@ fn parse_args() -> Result<Args> {
     let signing_info = match (signing_key, signing_cert, sbsign, sbverify) {
         (None, None, None, None) => None,
         (Some(signing_key), Some(signing_cert), Some(sbsign), Some(sbverify)) => {
-            Some(SigningInfo {
-                signing_key,
-                signing_cert,
-                sbsign,
-                sbverify,
-            })
+            if signing_key.exists() && signing_cert.exists() && sbsign.exists() && sbverify.exists()
+            {
+                Some(SigningInfo {
+                    signing_key,
+                    signing_cert,
+                    sbsign,
+                    sbverify,
+                })
+            } else {
+                return Err("The path provided to --signing-key, --signing-cert, --sbsign, or --sbverify did not exist".into());
+            }
         }
         _ => {
             return Err("--signing-key, --signing-cert, --sbsign, and --sbverify are all required when signing for SecureBoot".into());

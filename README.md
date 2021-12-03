@@ -88,6 +88,33 @@ Then add the `bootspec.nix` to your NixOS system's `configuration.nix`.
 
 Then run `nixos-rebuild switch`.
 
+### Using Secure Boot
+
+> **NOTE**: Secure Boot functionality is in its early stages, and as such some
+> things may or may not work as you might expect.
+
+To use Secure Boot, you will need to import the NixOS module as documented
+above, as well as set a few configuration options:
+
+```nix
+{
+  boot.loader.secureboot = {
+    enable = true;
+    signingKeyPath = "/path/to/the/signing/key";
+    signingCertPath = "/path/to/the/signing/cert";
+  };
+}
+```
+
+The Arch Wiki has a good resource on how to generate these keys yourself, which
+can be found at
+https://wiki.archlinux.org/title/Unified_Extensible_Firmware_Interface/Secure_Boot#Manual_process.
+The signing key and cert configured above are the `db.key` and `db.crt`
+mentioned in that resource, but the name doesn't matter. You will need to enroll
+the generated `PK.cer`, `KEK.cer`, and `db.cer` as the PK (or Platform Key), KEK
+(or Key Exchange Key), and DB (or Signature Database key). At this point, you
+should be able to boot using Secure Boot.
+
 # License
 
 [MIT](./LICENSE)

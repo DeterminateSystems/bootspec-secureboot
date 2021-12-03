@@ -42,7 +42,7 @@ pub fn generate(
     systemd_machine_id_setup: PathBuf,
 ) -> Result<()> {
     let machine_id = self::get_machine_id(&systemd_machine_id_setup)?;
-    let efi_nixos = format!("{}/efi/nixos", self::ROOT);
+    let efi_nixos = format!("{}/EFI/nixos", self::ROOT);
     let loader_entries = format!("{}/loader/entries", self::ROOT);
     fs::create_dir_all(&efi_nixos)?;
     fs::create_dir_all(&loader_entries)?;
@@ -89,7 +89,7 @@ fn efi_entry_impl(efi: &EfiProgram, machine_id: &str) -> Result<(String, Content
     let profile = &efi.source.profile_name;
     let specialisation = &efi.source.specialisation_name;
     let unified = format!(
-        "/efi/nixos/{}.efi",
+        "/EFI/nixos/{}.efi",
         &efi.source
             .toplevel
             .0
@@ -133,7 +133,7 @@ fn linux_entry_impl(toplevel: &BootableToplevel, machine_id: &str) -> Result<(St
     let profile = &toplevel.profile_name;
     let specialisation = &toplevel.specialisation_name;
     let linux = format!(
-        "/efi/nixos/{}.efi",
+        "/EFI/nixos/{}.efi",
         toplevel
             .kernel
             .display()
@@ -142,7 +142,7 @@ fn linux_entry_impl(toplevel: &BootableToplevel, machine_id: &str) -> Result<(St
             .replace("/", "-")
     );
     let initrd = format!(
-        "/efi/nixos/{}.efi",
+        "/EFI/nixos/{}.efi",
         toplevel
             .initrd
             .display()

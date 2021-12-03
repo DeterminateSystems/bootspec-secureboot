@@ -56,7 +56,7 @@ pub(crate) fn install(args: Args) -> Result<()> {
         if args.dry_run {
             writeln!(std::io::stdout(), "{:#?}", plan)?;
         } else {
-            fs::create_dir_all(esp.join("efi/nixos"))?;
+            fs::create_dir_all(esp.join("EFI/nixos"))?;
             fs::create_dir_all(esp.join("loader/entries"))?;
 
             plan::consume_plan(plan)?;
@@ -104,7 +104,7 @@ fn get_required_filenames(generations: Vec<Generation>) -> Vec<OsString> {
 fn remove_old_files(generations: &[Generation], path: &Path) -> Result<()> {
     trace!("removing old files");
 
-    let efi_nixos = path.join("efi/nixos");
+    let efi_nixos = path.join("EFI/nixos");
     let loader_entries = path.join("loader/entries");
 
     if !path.exists() || !efi_nixos.exists() || !loader_entries.exists() {
