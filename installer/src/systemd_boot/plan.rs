@@ -94,9 +94,14 @@ pub(crate) fn create_plan(plan_args: PlanArgs) -> Result<SystemdBootPlan> {
     }
 
     if let Some(signing_info) = &args.signing_info {
+        let mut to_sign = vec![];
+        to_sign.push(esp.join("EFI/systemd/systemd-bootx64.efi"));
+        to_sign.push(esp.join("EFI/BOOT/BOOTX64.EFI"));
+        to_sign.extend(identified_files.to_sign);
+
         plan.push(SystemdBootPlanState::SignFiles {
             signing_info,
-            to_sign: identified_files.to_sign,
+            to_sign,
         });
     }
 
