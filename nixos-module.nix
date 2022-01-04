@@ -24,7 +24,7 @@ in
           let
             generatorArgs = lib.escapeShellArgs ([
               "--systemd-machine-id-setup"
-              "${pkgs.systemd}/bin/systemd-machine-id-setup"
+              "${config.systemd.package}/bin/systemd-machine-id-setup"
             ]
             ++ (lib.optionals config.boot.loader.secureboot.enable [
               "--unified-efi"
@@ -33,7 +33,7 @@ in
               "${pkgs.binutils-unwrapped}/bin/objcopy"
 
               "--systemd-efi-stub"
-              "${pkgs.systemd}/lib/systemd/boot/efi/linuxx64.efi.stub"
+              "${config.systemd.package}/lib/systemd/boot/efi/linuxx64.efi.stub"
             ]));
 
             installerArgs = lib.escapeShellArgs
@@ -48,7 +48,7 @@ in
                 (toString config.boot.loader.timeout)
 
                 "--bootctl"
-                "${pkgs.systemd}/bin/bootctl"
+                "${config.systemd.package}/bin/bootctl"
 
                 "--generated-entries"
                 "./systemd-boot-entries"
