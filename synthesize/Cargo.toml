@@ -10,4 +10,4 @@ serde_json = "1.0.74"
 bootspec = { path = "../bootspec" }
 
 [dev-dependencies]
-tempfile = "3.2.0"
+tempfile = "3.3.0"
