@@ -1,6 +1,5 @@
 use std::ffi::OsString;
 use std::fs;
-use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use log::{debug, trace};
@@ -80,9 +79,9 @@ pub fn all_generations(profile: Option<String>, unified: bool) -> Result<Vec<Gen
             vec![filename.into(), conf_filename.into()]
         } else {
             let kernel_path = fs::canonicalize(path.join("kernel"))?;
-            let kernel_filename = self::store_path_to_filename(kernel_path)?;
+            let kernel_filename = self::store_path_to_efi_filename(kernel_path)?;
             let initrd_path = fs::canonicalize(path.join("initrd"))?;
-            let initrd_filename = self::store_path_to_filename(initrd_path)?;
+            let initrd_filename = self::store_path_to_efi_filename(initrd_path)?;
 
             vec![kernel_filename, initrd_filename, conf_filename.into()]
         };
@@ -100,7 +99,7 @@ pub fn all_generations(profile: Option<String>, unified: bool) -> Result<Vec<Gen
     Ok(generations)
 }
 
-pub fn store_path_to_filename(path: PathBuf) -> Result<OsString> {
+pub fn store_path_to_efi_filename(path: PathBuf) -> Result<OsString> {
     let s = path.to_string_lossy();
 
     if !s.starts_with(STORE_PATH_PREFIX) {
@@ -143,101 +142,27 @@ where
     Ok(())
 }
 
-/// Copies `source` to a temporary directory near `dest` recursively, and then atomically moves all the files to the desired location.
-pub fn atomic_tmp_copy(source: &Path, dest: &Path) -> Result<()> {
-    let tmp_dest = dest.join("tmp");
+/// Copies `source` to `dest` with a ".tmp" file extension, and then atomically moves it to the desired location.
+pub fn atomic_tmp_copy_file(source: &Path, dest: &Path) -> Result<()> {
+    let tmp_dest = dest.with_extension("tmp");
 
     if tmp_dest.exists() {
-        fs::remove_dir_all(&tmp_dest)?;
+        fs::remove_file(&tmp_dest)?;
     }
 
-    self::copy_impl(&source, &tmp_dest, None, false)?;
-    self::copy_impl(&tmp_dest, &dest, None, true)?;
-    fs::remove_dir_all(&tmp_dest)?;
-
-    Ok(())
-}
-
-// https://github.com/mdunsmuir/copy_dir/blob/071bab19cd716825375e70644c080c36a58863a1/src/lib.rs#L118
-// Original work Copyright (c) 2016 Michael Dunsmuir
-// Modified work Copyright (c) 2019 Cole Helbling
-// Modified work Copyright (c) 2021 Determinate Systems, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-// SOFTWARE.
-fn copy_impl<P, Q>(source: &P, dest: &Q, mut root: Option<(u64, u64)>, rename: bool) -> Result<()>
-where
-    P: AsRef<Path>,
-    Q: AsRef<Path>,
-{
-    fn uid(path: &Path) -> Result<(u64, u64)> {
-        let metadata = path.metadata()?;
-        Ok((metadata.dev(), metadata.ino()))
-    }
-
-    let source = source.as_ref();
-    let dest = dest.as_ref();
-    let id = uid(source)?;
-    let meta = source.metadata()?;
-
-    if meta.is_file() {
-        if fs::metadata(&dest).is_err() {
-            self::create_dirs_to_file(&dest)?;
-        }
-
-        if rename {
-            fs::rename(source, dest)?;
-        } else {
-            fs::copy(source, dest)?;
-        }
-    } else if meta.is_dir() {
-        if let Some(root) = root {
-            if root == id {
-                return Err("source is destination".into());
-            }
-        }
-
-        fs::create_dir_all(&dest)?;
-
-        if root.is_none() {
-            root = Some(uid(dest)?);
-        }
-
-        for entry in fs::read_dir(source)? {
-            let entry = entry?.path();
-            let name = entry
-                .file_name()
-                .ok_or("Entry did not contain valid filename")?;
-            self::copy_impl(&entry, &dest.join(name), root, rename)?;
-        }
-
-        fs::set_permissions(dest, meta.permissions())?;
-    } else {
-        // not file or dir (probably -> doesn't exist)
-    }
+    self::create_dirs_to_file(dest)?;
+    fs::copy(source, &tmp_dest)?;
+    fs::rename(tmp_dest, dest)?;
 
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Generation;
+    use super::*;
     use std::ffi::OsString;
+    use std::fs::File;
+    use std::io::{Read, Write};
 
     #[test]
     fn test_wanted_generations() {
@@ -283,5 +208,134 @@ mod tests {
             assert_eq!(ret_generations[0], generations[1]);
             assert_eq!(ret_generations.get(1), None);
         }
+    }
+
+    #[test]
+    fn test_create_dirs_to_file1() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let path = tempdir
+            .path()
+            .join("EFI/nixos/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.efi");
+
+        assert!(File::create(&path).is_err());
+        assert!(create_dirs_to_file(&path).is_ok());
+        assert!(path.parent().unwrap().exists());
+        assert!(File::create(path).is_ok());
+    }
+
+    #[test]
+    fn test_create_dirs_to_file2() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let path = tempdir
+            .path()
+            .join("EFI/loader/entries/nixos-generation-1.conf");
+
+        assert!(File::create(&path).is_err());
+        assert!(create_dirs_to_file(&path).is_ok());
+        assert!(path.parent().unwrap().exists());
+        assert!(File::create(path).is_ok());
+    }
+
+    #[test]
+    fn test_atomic_tmp_copy_file1() {
+        let source_tempdir = tempfile::tempdir().unwrap();
+        let dest_tempdir = tempfile::tempdir().unwrap();
+        let path = PathBuf::from("EFI/nixos/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.efi");
+        let source = source_tempdir.path().join(&path);
+        let dest = dest_tempdir.path().join(&path);
+
+        create_dirs_to_file(&source).unwrap();
+        File::create(&source).unwrap();
+
+        assert!(atomic_tmp_copy_file(&source, &dest).is_ok());
+        assert!(dest.exists());
+        assert_ne!(source, dest);
+        assert_eq!(
+            source.strip_prefix(source_tempdir),
+            dest.strip_prefix(dest_tempdir)
+        );
+    }
+
+    #[test]
+    fn test_atomic_tmp_copy_file2() {
+        let source_tempdir = tempfile::tempdir().unwrap();
+        let dest_tempdir = tempfile::tempdir().unwrap();
+        let path = PathBuf::from("EFI/loader/entries/nixos-generation-1.conf");
+        let source = source_tempdir.path().join(&path);
+        let dest = dest_tempdir.path().join(&path);
+
+        create_dirs_to_file(&source).unwrap();
+        File::create(&source).unwrap();
+
+        assert!(atomic_tmp_copy_file(&source, &dest).is_ok());
+        assert!(dest.exists());
+        assert_ne!(source, dest);
+        assert_eq!(
+            source.strip_prefix(source_tempdir),
+            dest.strip_prefix(dest_tempdir)
+        );
+    }
+
+    #[test]
+    fn test_atomic_tmp_copy_file3() {
+        let source_tempdir = tempfile::tempdir().unwrap();
+        let dest_tempdir = tempfile::tempdir().unwrap();
+        let path = PathBuf::from("EFI/loader/loader.conf");
+        let source = source_tempdir.path().join(&path);
+        let dest = dest_tempdir.path().join(&path);
+
+        create_dirs_to_file(&source).unwrap();
+        let mut f = File::create(&source).unwrap();
+        f.write_all(b"1").unwrap();
+
+        assert!(atomic_tmp_copy_file(&source, &dest).is_ok());
+        assert!(dest.exists());
+        assert_ne!(source, dest);
+        assert_eq!(
+            source.strip_prefix(&source_tempdir),
+            dest.strip_prefix(&dest_tempdir)
+        );
+
+        let mut f = File::open(&source).unwrap();
+        let mut contents = String::new();
+        f.read_to_string(&mut contents).unwrap();
+        assert_eq!(contents, "1");
+
+        let mut f = File::create(&source).unwrap();
+        f.write_all(b"2").unwrap();
+
+        assert!(atomic_tmp_copy_file(&source, &dest).is_ok());
+        assert!(dest.exists());
+        assert_ne!(source, dest);
+        assert_eq!(
+            source.strip_prefix(&source_tempdir),
+            dest.strip_prefix(&dest_tempdir)
+        );
+
+        let mut f = File::open(&source).unwrap();
+        let mut contents = String::new();
+        f.read_to_string(&mut contents).unwrap();
+        assert_eq!(contents, "2");
+    }
+
+    #[test]
+    fn test_profile_path() {
+        assert_eq!(profile_path(&None), "/nix/var/nix/profiles/system");
+        assert_eq!(
+            profile_path(&Some(String::from("user"))),
+            "/nix/var/nix/profiles/system-profiles/user"
+        );
+    }
+
+    #[test]
+    fn test_store_path_to_efi_filename() {
+        assert_eq!(
+            store_path_to_efi_filename(PathBuf::from(
+                "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-efi/some/file/here"
+            ))
+            .unwrap(),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-efi-some-file-here.efi"
+        );
+        assert!(store_path_to_efi_filename(PathBuf::from("/foo/bar")).is_err());
     }
 }

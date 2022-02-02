@@ -94,9 +94,10 @@ pub(crate) fn create_plan(plan_args: PlanArgs) -> Result<SystemdBootPlan> {
     }
 
     if let Some(signing_info) = &args.signing_info {
-        let mut to_sign = vec![];
-        to_sign.push(esp.join("EFI/systemd/systemd-bootx64.efi"));
-        to_sign.push(esp.join("EFI/BOOT/BOOTX64.EFI"));
+        let mut to_sign = vec![
+            esp.join("EFI/systemd/systemd-bootx64.efi"),
+            esp.join("EFI/BOOT/BOOTX64.EFI"),
+        ];
         to_sign.extend(identified_files.to_sign);
 
         plan.push(SystemdBootPlanState::SignFiles {
@@ -216,10 +217,7 @@ pub(crate) fn consume_plan(plan: SystemdBootPlan) -> Result<()> {
                 esp,
             } => {
                 trace!("copying everything to the esp");
-
-                // If there's not enough space for everything, this will error out while copying files, before
-                // anything is overwritten via renaming.
-                util::atomic_tmp_copy(generated_entries, esp)?;
+                self::copy_to_esp(generated_entries, esp)?;
                 fs::remove_dir_all(&generated_entries)?;
             }
             Syncfs { esp } => {
@@ -230,6 +228,60 @@ pub(crate) fn consume_plan(plan: SystemdBootPlan) -> Result<()> {
                 trace!("finished updating / installing")
             }
         }
+    }
+
+    Ok(())
+}
+
+fn run_install(
+    loader: Option<PathBuf>,
+    bootctl: &Path,
+    esp: &Path,
+    can_touch_efi_vars: bool,
+) -> Result<()> {
+    if let Some(loader) = loader {
+        debug!("removing existing loader.conf");
+        fs::remove_file(&loader)?;
+    }
+
+    let mut args = vec![
+        String::from("install"),
+        String::from("--path"),
+        esp.display().to_string(),
+    ];
+    if !can_touch_efi_vars {
+        args.push(String::from("--no-variables"));
+    }
+    debug!("running `{}` with args `{:?}`", &bootctl.display(), &args);
+    let status = Command::new(&bootctl).args(&args).status()?;
+
+    if !status.success() {
+        return Err(format!(
+            "failed to run `{}` with args `{:?}`",
+            &bootctl.display(),
+            &args
+        )
+        .into());
+    }
+
+    Ok(())
+}
+
+fn run_update(bootctl: &Path, esp: &Path) -> Result<()> {
+    let systemd_version = SystemdVersion::detect_version(bootctl)?;
+    info!("updating systemd-boot to {}", systemd_version.version);
+
+    let args = &["update", "--path", &esp.display().to_string()];
+    debug!("running `{}` with args `{:?}`", &bootctl.display(), &args);
+    let status = Command::new(&bootctl).args(args).status()?;
+
+    if !status.success() {
+        return Err(format!(
+            "failed to run `{}` with args `{:?}`",
+            &bootctl.display(),
+            &args
+        )
+        .into());
     }
 
     Ok(())
@@ -320,55 +372,20 @@ fn replace_file(file: &FileToReplace, signing_info: &Option<SigningInfo>) -> Res
     Ok(())
 }
 
-fn run_install(
-    loader: Option<PathBuf>,
-    bootctl: &Path,
-    esp: &Path,
-    can_touch_efi_vars: bool,
-) -> Result<()> {
-    if let Some(loader) = loader {
-        debug!("removing existing loader.conf");
-        fs::remove_file(&loader)?;
-    }
+fn copy_to_esp(generated_entries: &Path, esp: &Path) -> Result<()> {
+    for entry in walkdir::WalkDir::new(generated_entries) {
+        let entry = entry?;
+        let path = entry.path();
 
-    let mut args = vec![
-        String::from("install"),
-        String::from("--path"),
-        esp.display().to_string(),
-    ];
-    if !can_touch_efi_vars {
-        args.push(String::from("--no-variables"));
-    }
-    debug!("running `{}` with args `{:?}`", &bootctl.display(), &args);
-    let status = Command::new(&bootctl).args(&args).status()?;
+        if !path.is_file() {
+            continue;
+        }
 
-    if !status.success() {
-        return Err(format!(
-            "failed to run `{}` with args `{:?}`",
-            &bootctl.display(),
-            &args
-        )
-        .into());
-    }
+        let stripped = path.strip_prefix(generated_entries)?;
+        let dest = esp.join(stripped);
 
-    Ok(())
-}
-
-fn run_update(bootctl: &Path, esp: &Path) -> Result<()> {
-    let systemd_version = SystemdVersion::detect_version(bootctl)?;
-    info!("updating systemd-boot to {}", systemd_version.version);
-
-    let args = &["update", "--path", &esp.display().to_string()];
-    debug!("running `{}` with args `{:?}`", &bootctl.display(), &args);
-    let status = Command::new(&bootctl).args(args).status()?;
-
-    if !status.success() {
-        return Err(format!(
-            "failed to run `{}` with args `{:?}`",
-            &bootctl.display(),
-            &args
-        )
-        .into());
+        trace!("copying file {} to {}", path.display(), dest.display());
+        util::atomic_tmp_copy_file(path, dest.as_path())?;
     }
 
     Ok(())
@@ -590,9 +607,10 @@ mod tests {
         };
 
         let plan = create_plan(plan_args).unwrap();
-        let mut to_sign = vec![];
-        to_sign.push(esp.join("EFI/systemd/systemd-bootx64.efi"));
-        to_sign.push(esp.join("EFI/BOOT/BOOTX64.EFI"));
+        let mut to_sign = vec![
+            esp.join("EFI/systemd/systemd-bootx64.efi"),
+            esp.join("EFI/BOOT/BOOTX64.EFI"),
+        ];
         to_sign.extend(identified_files.to_sign);
 
         assert_eq!(
