@@ -79,9 +79,9 @@ pub fn all_generations(profile: Option<String>, unified: bool) -> Result<Vec<Gen
             vec![filename.into(), conf_filename.into()]
         } else {
             let kernel_path = fs::canonicalize(path.join("kernel"))?;
-            let kernel_filename = self::store_path_to_filename(kernel_path)?;
+            let kernel_filename = self::store_path_to_efi_filename(kernel_path)?;
             let initrd_path = fs::canonicalize(path.join("initrd"))?;
-            let initrd_filename = self::store_path_to_filename(initrd_path)?;
+            let initrd_filename = self::store_path_to_efi_filename(initrd_path)?;
 
             vec![kernel_filename, initrd_filename, conf_filename.into()]
         };
@@ -99,7 +99,7 @@ pub fn all_generations(profile: Option<String>, unified: bool) -> Result<Vec<Gen
     Ok(generations)
 }
 
-pub fn store_path_to_filename(path: PathBuf) -> Result<OsString> {
+pub fn store_path_to_efi_filename(path: PathBuf) -> Result<OsString> {
     let s = path.to_string_lossy();
 
     if !s.starts_with(STORE_PATH_PREFIX) {
@@ -282,5 +282,17 @@ mod tests {
             profile_path(&Some(String::from("user"))),
             "/nix/var/nix/profiles/system-profiles/user"
         );
+    }
+
+    #[test]
+    fn test_store_path_to_efi_filename() {
+        assert_eq!(
+            store_path_to_efi_filename(PathBuf::from(
+                "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-efi/some/file/here"
+            ))
+            .unwrap(),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-efi-some-file-here.efi"
+        );
+        assert!(store_path_to_efi_filename(PathBuf::from("/foo/bar")).is_err());
     }
 }
