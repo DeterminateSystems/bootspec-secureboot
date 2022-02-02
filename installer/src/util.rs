@@ -162,6 +162,7 @@ mod tests {
     use super::*;
     use std::ffi::OsString;
     use std::fs::File;
+    use std::io::{Read, Write};
 
     #[test]
     fn test_wanted_generations() {
@@ -273,6 +274,48 @@ mod tests {
             source.strip_prefix(source_tempdir),
             dest.strip_prefix(dest_tempdir)
         );
+    }
+
+    #[test]
+    fn test_atomic_tmp_copy_file3() {
+        let source_tempdir = tempfile::tempdir().unwrap();
+        let dest_tempdir = tempfile::tempdir().unwrap();
+        let path = PathBuf::from("EFI/loader/loader.conf");
+        let source = source_tempdir.path().join(&path);
+        let dest = dest_tempdir.path().join(&path);
+
+        create_dirs_to_file(&source).unwrap();
+        let mut f = File::create(&source).unwrap();
+        f.write_all(b"1").unwrap();
+
+        assert!(atomic_tmp_copy_file(&source, &dest).is_ok());
+        assert!(dest.exists());
+        assert_ne!(source, dest);
+        assert_eq!(
+            source.strip_prefix(&source_tempdir),
+            dest.strip_prefix(&dest_tempdir)
+        );
+
+        let mut f = File::open(&source).unwrap();
+        let mut contents = String::new();
+        f.read_to_string(&mut contents).unwrap();
+        assert_eq!(contents, "1");
+
+        let mut f = File::create(&source).unwrap();
+        f.write_all(b"2").unwrap();
+
+        assert!(atomic_tmp_copy_file(&source, &dest).is_ok());
+        assert!(dest.exists());
+        assert_ne!(source, dest);
+        assert_eq!(
+            source.strip_prefix(&source_tempdir),
+            dest.strip_prefix(&dest_tempdir)
+        );
+
+        let mut f = File::open(&source).unwrap();
+        let mut contents = String::new();
+        f.read_to_string(&mut contents).unwrap();
+        assert_eq!(contents, "2");
     }
 
     #[test]
