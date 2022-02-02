@@ -234,4 +234,44 @@ mod tests {
         assert!(path.parent().unwrap().exists());
         assert!(File::create(path).is_ok());
     }
+
+    #[test]
+    fn test_atomic_tmp_copy_file1() {
+        let source_tempdir = tempfile::tempdir().unwrap();
+        let dest_tempdir = tempfile::tempdir().unwrap();
+        let path = PathBuf::from("EFI/nixos/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.efi");
+        let source = source_tempdir.path().join(&path);
+        let dest = dest_tempdir.path().join(&path);
+
+        create_dirs_to_file(&source).unwrap();
+        File::create(&source).unwrap();
+
+        assert!(atomic_tmp_copy_file(&source, &dest).is_ok());
+        assert!(dest.exists());
+        assert_ne!(source, dest);
+        assert_eq!(
+            source.strip_prefix(source_tempdir),
+            dest.strip_prefix(dest_tempdir)
+        );
+    }
+
+    #[test]
+    fn test_atomic_tmp_copy_file2() {
+        let source_tempdir = tempfile::tempdir().unwrap();
+        let dest_tempdir = tempfile::tempdir().unwrap();
+        let path = PathBuf::from("EFI/loader/entries/nixos-generation-1.conf");
+        let source = source_tempdir.path().join(&path);
+        let dest = dest_tempdir.path().join(&path);
+
+        create_dirs_to_file(&source).unwrap();
+        File::create(&source).unwrap();
+
+        assert!(atomic_tmp_copy_file(&source, &dest).is_ok());
+        assert!(dest.exists());
+        assert_ne!(source, dest);
+        assert_eq!(
+            source.strip_prefix(source_tempdir),
+            dest.strip_prefix(dest_tempdir)
+        );
+    }
 }
