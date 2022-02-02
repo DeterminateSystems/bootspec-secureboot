@@ -235,6 +235,60 @@ pub(crate) fn consume_plan(plan: SystemdBootPlan) -> Result<()> {
     Ok(())
 }
 
+fn run_install(
+    loader: Option<PathBuf>,
+    bootctl: &Path,
+    esp: &Path,
+    can_touch_efi_vars: bool,
+) -> Result<()> {
+    if let Some(loader) = loader {
+        debug!("removing existing loader.conf");
+        fs::remove_file(&loader)?;
+    }
+
+    let mut args = vec![
+        String::from("install"),
+        String::from("--path"),
+        esp.display().to_string(),
+    ];
+    if !can_touch_efi_vars {
+        args.push(String::from("--no-variables"));
+    }
+    debug!("running `{}` with args `{:?}`", &bootctl.display(), &args);
+    let status = Command::new(&bootctl).args(&args).status()?;
+
+    if !status.success() {
+        return Err(format!(
+            "failed to run `{}` with args `{:?}`",
+            &bootctl.display(),
+            &args
+        )
+        .into());
+    }
+
+    Ok(())
+}
+
+fn run_update(bootctl: &Path, esp: &Path) -> Result<()> {
+    let systemd_version = SystemdVersion::detect_version(bootctl)?;
+    info!("updating systemd-boot to {}", systemd_version.version);
+
+    let args = &["update", "--path", &esp.display().to_string()];
+    debug!("running `{}` with args `{:?}`", &bootctl.display(), &args);
+    let status = Command::new(&bootctl).args(args).status()?;
+
+    if !status.success() {
+        return Err(format!(
+            "failed to run `{}` with args `{:?}`",
+            &bootctl.display(),
+            &args
+        )
+        .into());
+    }
+
+    Ok(())
+}
+
 fn replace_file(file: &FileToReplace, signing_info: &Option<SigningInfo>) -> Result<()> {
     let generated_loc = &file.generated_loc;
     let esp_loc = &file.esp_loc;
@@ -315,60 +369,6 @@ fn replace_file(file: &FileToReplace, signing_info: &Option<SigningInfo>) -> Res
             esp_loc.display(),
             generated_loc.display(),
         );
-    }
-
-    Ok(())
-}
-
-fn run_install(
-    loader: Option<PathBuf>,
-    bootctl: &Path,
-    esp: &Path,
-    can_touch_efi_vars: bool,
-) -> Result<()> {
-    if let Some(loader) = loader {
-        debug!("removing existing loader.conf");
-        fs::remove_file(&loader)?;
-    }
-
-    let mut args = vec![
-        String::from("install"),
-        String::from("--path"),
-        esp.display().to_string(),
-    ];
-    if !can_touch_efi_vars {
-        args.push(String::from("--no-variables"));
-    }
-    debug!("running `{}` with args `{:?}`", &bootctl.display(), &args);
-    let status = Command::new(&bootctl).args(&args).status()?;
-
-    if !status.success() {
-        return Err(format!(
-            "failed to run `{}` with args `{:?}`",
-            &bootctl.display(),
-            &args
-        )
-        .into());
-    }
-
-    Ok(())
-}
-
-fn run_update(bootctl: &Path, esp: &Path) -> Result<()> {
-    let systemd_version = SystemdVersion::detect_version(bootctl)?;
-    info!("updating systemd-boot to {}", systemd_version.version);
-
-    let args = &["update", "--path", &esp.display().to_string()];
-    debug!("running `{}` with args `{:?}`", &bootctl.display(), &args);
-    let status = Command::new(&bootctl).args(args).status()?;
-
-    if !status.success() {
-        return Err(format!(
-            "failed to run `{}` with args `{:?}`",
-            &bootctl.display(),
-            &args
-        )
-        .into());
     }
 
     Ok(())
