@@ -134,6 +134,7 @@ dependencies = [
  "log",
  "pico-args",
  "regex",
+ "tempfile",
  "walkdir",
 ]
 

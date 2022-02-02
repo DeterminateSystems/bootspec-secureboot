@@ -159,8 +159,9 @@ pub fn atomic_tmp_copy_file(source: &Path, dest: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::Generation;
+    use super::*;
     use std::ffi::OsString;
+    use std::fs::File;
 
     #[test]
     fn test_wanted_generations() {
@@ -206,5 +207,31 @@ mod tests {
             assert_eq!(ret_generations[0], generations[1]);
             assert_eq!(ret_generations.get(1), None);
         }
+    }
+
+    #[test]
+    fn test_create_dirs_to_file1() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let path = tempdir
+            .path()
+            .join("EFI/nixos/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.efi");
+
+        assert!(File::create(&path).is_err());
+        assert!(create_dirs_to_file(&path).is_ok());
+        assert!(path.parent().unwrap().exists());
+        assert!(File::create(path).is_ok());
+    }
+
+    #[test]
+    fn test_create_dirs_to_file2() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let path = tempdir
+            .path()
+            .join("EFI/loader/entries/nixos-generation-1.conf");
+
+        assert!(File::create(&path).is_err());
+        assert!(create_dirs_to_file(&path).is_ok());
+        assert!(path.parent().unwrap().exists());
+        assert!(File::create(path).is_ok());
     }
 }
