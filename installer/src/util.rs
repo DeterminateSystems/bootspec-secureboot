@@ -274,4 +274,13 @@ mod tests {
             dest.strip_prefix(dest_tempdir)
         );
     }
+
+    #[test]
+    fn test_profile_path() {
+        assert_eq!(profile_path(&None), "/nix/var/nix/profiles/system");
+        assert_eq!(
+            profile_path(&Some(String::from("user"))),
+            "/nix/var/nix/profiles/system-profiles/user"
+        );
+    }
 }
