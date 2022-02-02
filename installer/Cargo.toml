@@ -16,4 +16,5 @@ log = "0.4.14"
 # generator = { path = "../generator" }
 pico-args = { version = "0.4.2", default-features = false, features = ["eq-separator", "combined-flags"] }
 regex = { version = "1.5.4", default-features = false, features = ["std", "unicode"] }
+walkdir = "2.3.2"
 # askama = "0.10.5"

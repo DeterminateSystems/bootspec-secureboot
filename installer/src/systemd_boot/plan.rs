@@ -216,10 +216,7 @@ pub(crate) fn consume_plan(plan: SystemdBootPlan) -> Result<()> {
                 esp,
             } => {
                 trace!("copying everything to the esp");
-
-                // If there's not enough space for everything, this will error out while copying files, before
-                // anything is overwritten via renaming.
-                util::atomic_tmp_copy(generated_entries, esp)?;
+                self::copy_to_esp(generated_entries, esp)?;
                 fs::remove_dir_all(&generated_entries)?;
             }
             Syncfs { esp } => {
@@ -369,6 +366,25 @@ fn replace_file(file: &FileToReplace, signing_info: &Option<SigningInfo>) -> Res
             esp_loc.display(),
             generated_loc.display(),
         );
+    }
+
+    Ok(())
+}
+
+fn copy_to_esp(generated_entries: &Path, esp: &Path) -> Result<()> {
+    for entry in walkdir::WalkDir::new(generated_entries) {
+        let entry = entry?;
+        let path = entry.path();
+
+        if !path.is_file() {
+            continue;
+        }
+
+        let stripped = path.strip_prefix(generated_entries)?;
+        let dest = esp.join(stripped);
+
+        trace!("copying file {} to {}", path.display(), dest.display());
+        util::atomic_tmp_copy_file(path, dest.as_path())?;
     }
 
     Ok(())
