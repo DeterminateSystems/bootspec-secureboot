@@ -8,7 +8,7 @@ jobs:
   format:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - uses: cachix/install-nix-action@v16
       with:
         extra_nix_config: |
@@ -19,7 +19,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - uses: cachix/install-nix-action@v16
       with:
         extra_nix_config: |
@@ -30,7 +30,7 @@ jobs:
   Spelling:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - uses: cachix/install-nix-action@v16
       with:
         extra_nix_config: |
@@ -42,7 +42,7 @@ jobs:
   NixFormatting:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
       with:
         fetch-depth: 0
     - uses: cachix/install-nix-action@v16
@@ -55,7 +55,7 @@ jobs:
   EditorConfig:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           fetch-depth: 0
       - uses: greut/eclint-action@v0
