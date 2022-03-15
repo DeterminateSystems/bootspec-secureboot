@@ -17,35 +17,48 @@ mod systemd_boot;
 mod util;
 
 // TODO: separate by bootloader using a subcommand?
-#[derive(Default, Debug)]
+#[derive(clap::Parser, Default, Debug)]
 struct Args {
     /// The path to the default configuration's toplevel.
+    #[clap(long)]
     toplevel: PathBuf,
     /// Whether to actually touch stuff or not
+    #[clap(long)]
     dry_run: bool,
     /// The directory that the generator created
+    #[clap(long)]
     generated_entries: PathBuf,
     /// TODO
+    #[clap(long)]
     timeout: Option<usize>,
+    #[clap(long)]
     /// TODO
     console_mode: String,
+    #[clap(long)]
     /// TODO
     configuration_limit: Option<usize>,
     /// TODO
+    #[clap(long)]
     editor: bool,
     /// TODO
+    #[clap(short, long, parse(from_occurrences))]
     verbosity: usize,
     /// TODO
+    #[clap(long)]
     install: bool,
 
+    #[clap(long)]
     // EFI-specific arguments
     /// The path to the EFI System Partition(s)
     esp: Vec<PathBuf>,
     /// Whether or not to touch EFI vars in the NVRAM
+    #[clap(long)]
     can_touch_efi_vars: bool,
+    #[clap(long)]
     /// TODO: bootctl path
     bootctl: Option<PathBuf>,
     /// Whether to use unified EFI files
+    #[clap(long)]
     unified_efi: bool,
     /// The signing info used for Secure Boot
     signing_info: Option<SigningInfo>,
@@ -54,7 +67,7 @@ struct Args {
 pub(crate) type Result<T, E = Box<dyn Error + Send + Sync + 'static>> = core::result::Result<T, E>;
 
 fn main() -> Result<()> {
-    let args = self::parse_args()?;
+    let args: Args = clap::Parser::parse();
 
     env_logger::Builder::new()
         .format(|buf, record| writeln!(buf, "{:<5} {}", record.level(), record.args()))
