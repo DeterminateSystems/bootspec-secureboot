@@ -93,7 +93,7 @@ pub(crate) fn create_plan(plan_args: PlanArgs) -> Result<SystemdBootPlan> {
         plan.push(SystemdBootPlanState::Update { bootctl, esp });
     }
 
-    if let Some(signing_info) = &args.signing_info {
+    if let Some(signing_info) = &args.signing_info.0 {
         let mut to_sign = vec![
             esp.join("EFI/systemd/systemd-bootx64.efi"),
             esp.join("EFI/BOOT/BOOTX64.EFI"),
@@ -433,7 +433,7 @@ mod tests {
             can_touch_efi_vars: false,
             bootctl: Some(PathBuf::from("bootctl")),
             unified_efi: false,
-            signing_info,
+            signing_info: signing_info.into(),
         };
         let system_generations = vec![
             Generation {

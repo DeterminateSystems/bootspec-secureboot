@@ -5,11 +5,15 @@ use log::debug;
 
 use crate::Result;
 
-#[derive(Debug, PartialEq, PartialOrd)]
+#[derive(Debug, PartialEq, PartialOrd, clap::Args)]
 pub struct SigningInfo {
+    #[clap(long, required = false)]
     pub signing_key: PathBuf,
+    #[clap(long, required = false)]
     pub signing_cert: PathBuf,
+    #[clap(long, required = false)]
     pub sbsign: PathBuf,
+    #[clap(long, required = false)]
     pub sbverify: PathBuf,
 }
 

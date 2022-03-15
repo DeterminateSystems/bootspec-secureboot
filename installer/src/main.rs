@@ -2,16 +2,16 @@
 
 // NOTE: profile names might have invalid characters? https://github.com/NixOS/nixpkgs/pull/114637
 // TODO: maybe make the installer use the generator directly? e.g. don't write to files, write to a HashMap<String, String>, which maps the file path to its contents
-use std::error::Error;
-use std::io::Write;
 use std::path::PathBuf;
+use std::{error::Error, io::Write};
 
 use log::LevelFilter;
 
-use crate::secure_boot::SigningInfo;
+use crate::options::OptionalSigningInfo;
 
 mod files;
 mod grub;
+mod options;
 mod secure_boot;
 mod systemd_boot;
 mod util;
@@ -61,7 +61,8 @@ struct Args {
     #[clap(long)]
     unified_efi: bool,
     /// The signing info used for Secure Boot
-    signing_info: Option<SigningInfo>,
+    #[clap(flatten)]
+    signing_info: OptionalSigningInfo,
 }
 
 pub(crate) type Result<T, E = Box<dyn Error + Send + Sync + 'static>> = core::result::Result<T, E>;
