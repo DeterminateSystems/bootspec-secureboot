@@ -7,12 +7,16 @@ use crate::Result;
 
 #[derive(Debug, PartialEq, PartialOrd, clap::Args)]
 pub struct SigningInfo {
+    /// Path to signing-key file to use when signing secure boot
     #[clap(long, required = false)]
     pub signing_key: PathBuf,
+    /// Path to signing-certificate (x509 certificate) file to use when signing secure boot
     #[clap(long, required = false)]
     pub signing_cert: PathBuf,
+    /// Path to secure boot signature file to use when signing secure boot
     #[clap(long, required = false)]
     pub sbsign: PathBuf,
+    /// Path to secure boot verification file to use when signing secure boot
     #[clap(long, required = false)]
     pub sbverify: PathBuf,
 }
