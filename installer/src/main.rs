@@ -9,9 +9,9 @@ use log::LevelFilter;
 
 use crate::options::OptionalSigningInfo;
 
+mod cli;
 mod files;
 mod grub;
-mod options;
 mod secure_boot;
 mod systemd_boot;
 mod util;
