@@ -1,10 +1,12 @@
 use crate::secure_boot::SigningInfo;
-use clap::{ArgMatches, Args, Command, FromArgMatches};
+
+use clap::{ArgMatches, Args as ClapArgs, Command, FromArgMatches};
+use std::path::PathBuf;
 
 #[derive(Debug, Default)]
 pub struct OptionalSigningInfo(pub Option<SigningInfo>);
 
-impl Args for OptionalSigningInfo {
+impl ClapArgs for OptionalSigningInfo {
     fn augment_args(cmd: Command<'_>) -> Command<'_> {
         SigningInfo::augment_args(cmd)
     }
@@ -87,6 +89,67 @@ impl std::ops::Deref for OptionalSigningInfo {
     }
 }
 
+// TODO: separate by bootloader using a subcommand?
+#[derive(clap::Parser, Default, Debug)]
+pub struct Args {
+    /// The path to the default configuration's toplevel.
+    #[clap(long)]
+    pub toplevel: PathBuf,
+
+    /// Whether to actually touch stuff or not
+    #[clap(long)]
+    pub dry_run: bool,
+
+    /// The directory that the generator created
+    #[clap(long)]
+    pub generated_entries: PathBuf,
+
+    /// TODO
+    #[clap(long)]
+    pub timeout: Option<usize>,
+
+    /// TODO
+    #[clap(long)]
+    pub console_mode: String,
+
+    /// TODO
+    #[clap(long)]
+    pub configuration_limit: Option<usize>,
+
+    /// TODO
+    #[clap(long)]
+    pub editor: bool,
+
+    /// TODO
+    #[clap(short, long, parse(from_occurrences))]
+    pub verbosity: usize,
+
+    /// TODO
+    #[clap(long)]
+    pub install: bool,
+
+    // EFI-specific arguments
+    /// The path to the EFI System Partition(s)
+    #[clap(long)]
+    pub esp: Vec<PathBuf>,
+
+    /// Whether or not to touch EFI vars in the NVRAM
+    #[clap(long)]
+    pub can_touch_efi_vars: bool,
+
+    /// TODO: bootctl path
+    #[clap(long)]
+    pub bootctl: Option<PathBuf>,
+
+    /// Whether to use unified EFI files
+    #[clap(long)]
+    pub unified_efi: bool,
+
+    /// The signing info used for Secure Boot
+    #[clap(flatten)]
+    pub signing_info: OptionalSigningInfo,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,6 +157,6 @@ mod tests {
     #[test]
     fn verify_command_args() {
         use clap::CommandFactory;
-        crate::Args::command().debug_assert();
+        Args::command().debug_assert();
     }
 }
