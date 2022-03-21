@@ -25,6 +25,8 @@
 
           buildInputs = with pkgs; [
             cargo
+            rustc
+            clippy
             codespell
             nixpkgs-fmt
             rustfmt

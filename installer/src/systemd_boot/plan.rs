@@ -68,6 +68,7 @@ pub(crate) struct PlanArgs<'a> {
     pub wanted_generations: &'a [Generation],
     pub default_generation: &'a Generation,
     pub identified_files: IdentifiedFiles,
+    pub signing_info: &'a Option<SigningInfo>,
 }
 
 pub(crate) fn create_plan(plan_args: PlanArgs) -> Result<SystemdBootPlan> {
@@ -93,7 +94,7 @@ pub(crate) fn create_plan(plan_args: PlanArgs) -> Result<SystemdBootPlan> {
         plan.push(SystemdBootPlanState::Update { bootctl, esp });
     }
 
-    if let Some(signing_info) = &args.signing_info {
+    if let Some(signing_info) = &plan_args.signing_info {
         let mut to_sign = vec![
             esp.join("EFI/systemd/systemd-bootx64.efi"),
             esp.join("EFI/BOOT/BOOTX64.EFI"),
@@ -115,7 +116,7 @@ pub(crate) fn create_plan(plan_args: PlanArgs) -> Result<SystemdBootPlan> {
     });
 
     plan.push(SystemdBootPlanState::ReplaceFiles {
-        signing_info: &args.signing_info,
+        signing_info: &plan_args.signing_info,
         to_replace: identified_files.to_replace,
     });
 
@@ -417,7 +418,10 @@ mod tests {
 
     fn scaffold(
         install: bool,
-        signing_info: Option<SigningInfo>,
+        signing_key: Option<PathBuf>,
+        signing_cert: Option<PathBuf>,
+        sbsign: Option<PathBuf>,
+        sbverify: Option<PathBuf>,
     ) -> (Args, Vec<Generation>, Generation, IdentifiedFiles) {
         let args = Args {
             toplevel: PathBuf::from("toplevel"),
@@ -433,7 +437,10 @@ mod tests {
             can_touch_efi_vars: false,
             bootctl: Some(PathBuf::from("bootctl")),
             unified_efi: false,
-            signing_info,
+            signing_key,
+            signing_cert,
+            sbsign,
+            sbverify,
         };
         let system_generations = vec![
             Generation {
@@ -488,7 +495,7 @@ mod tests {
     #[test]
     fn test_update_plan() {
         let (args, wanted_generations, default_generation, identified_files) =
-            scaffold(false, None);
+            scaffold(false, None, None, None, None);
         let bootctl = args.bootctl.as_ref().unwrap();
         let esp = &args.esp[0];
         let plan_args = PlanArgs {
@@ -498,6 +505,7 @@ mod tests {
             wanted_generations: &wanted_generations,
             default_generation: &default_generation,
             identified_files,
+            signing_info: &None,
         };
 
         let plan = create_plan(plan_args).unwrap();
@@ -535,7 +543,8 @@ mod tests {
 
     #[test]
     fn test_install_plan() {
-        let (args, wanted_generations, default_generation, identified_files) = scaffold(true, None);
+        let (args, wanted_generations, default_generation, identified_files) =
+            scaffold(true, None, None, None, None);
         let bootctl = args.bootctl.as_ref().unwrap();
         let esp = &args.esp[0];
         let plan_args = PlanArgs {
@@ -545,6 +554,7 @@ mod tests {
             wanted_generations: &wanted_generations,
             default_generation: &default_generation,
             identified_files,
+            signing_info: &None,
         };
 
         let plan = create_plan(plan_args).unwrap();
@@ -587,14 +597,24 @@ mod tests {
 
     #[test]
     fn test_sign_plan() {
+        let signing_key = PathBuf::from("db.key");
+        let signing_cert = PathBuf::from("db.crt");
+        let sbsign = PathBuf::from("sbsign");
+        let sbverify = PathBuf::from("sbverify");
         let signing_info = SigningInfo {
-            signing_key: PathBuf::from("db.key"),
-            signing_cert: PathBuf::from("db.crt"),
-            sbsign: PathBuf::from("sbsign"),
-            sbverify: PathBuf::from("sbverify"),
+            signing_key: signing_key.clone(),
+            signing_cert: signing_cert.clone(),
+            sbsign: sbsign.clone(),
+            sbverify: sbverify.clone(),
         };
-        let (args, wanted_generations, default_generation, identified_files) =
-            scaffold(false, Some(signing_info));
+
+        let (args, wanted_generations, default_generation, identified_files) = scaffold(
+            false,
+            Some(signing_key),
+            Some(signing_cert),
+            Some(sbsign),
+            Some(sbverify),
+        );
         let bootctl = args.bootctl.as_ref().unwrap();
         let esp = &args.esp[0];
         let plan_args = PlanArgs {
@@ -604,6 +624,7 @@ mod tests {
             wanted_generations: &wanted_generations,
             default_generation: &default_generation,
             identified_files: identified_files.clone(),
+            signing_info: &Some(signing_info.clone()),
         };
 
         let plan = create_plan(plan_args).unwrap();
@@ -619,7 +640,7 @@ mod tests {
                 SystemdBootPlanState::Start,
                 SystemdBootPlanState::Update { bootctl, esp },
                 SystemdBootPlanState::SignFiles {
-                    signing_info: args.signing_info.as_ref().unwrap(),
+                    signing_info: &signing_info.clone(),
                     to_sign
                 },
                 SystemdBootPlanState::PruneFiles {
@@ -627,7 +648,7 @@ mod tests {
                     paths: vec![&args.generated_entries, esp],
                 },
                 SystemdBootPlanState::ReplaceFiles {
-                    signing_info: &args.signing_info,
+                    signing_info: &Some(signing_info),
                     to_replace: vec![],
                 },
                 SystemdBootPlanState::WriteLoader {

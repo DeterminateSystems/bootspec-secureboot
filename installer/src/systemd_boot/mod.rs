@@ -8,6 +8,7 @@ use log::{debug, trace, warn};
 use regex::Regex;
 
 use crate::files::IdentifiedFiles;
+use crate::secure_boot::SigningInfo;
 use crate::systemd_boot::plan::PlanArgs;
 use crate::util::{self, Generation};
 use crate::{Args, Result};
@@ -38,6 +39,25 @@ pub(crate) fn install(args: Args) -> Result<()> {
             fs::canonicalize(&generation.path).ok() == fs::canonicalize(&args.toplevel).ok()
         })
         .ok_or("couldn't find generation that corresponds to the provided toplevel")?;
+    let signing_info = match (
+        args.signing_key.as_ref(),
+        args.signing_cert.as_ref(),
+        args.sbsign.as_ref(),
+        args.sbverify.as_ref(),
+    ) {
+        (Some(signing_key), Some(signing_cert), Some(sbsign), Some(sbverify)) => {
+            Some(SigningInfo {
+                signing_key: signing_key.to_path_buf(),
+                signing_cert: signing_cert.to_path_buf(),
+                sbsign: sbsign.to_path_buf(),
+                sbverify: sbverify.to_path_buf(),
+            })
+        }
+        (None, None, None, None) => None,
+        // clap's derive macro handles the error in case not all of the required
+        // arguments are provided.
+        _ => unreachable!(),
+    };
 
     for esp in esps {
         let identified_files = IdentifiedFiles::new(&args.generated_entries, esp)?;
@@ -49,6 +69,7 @@ pub(crate) fn install(args: Args) -> Result<()> {
             wanted_generations: &wanted_generations,
             default_generation,
             identified_files,
+            signing_info: &signing_info,
         };
 
         let plan = plan::create_plan(plan_args)?;

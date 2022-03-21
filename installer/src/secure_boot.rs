@@ -5,7 +5,7 @@ use log::debug;
 
 use crate::Result;
 
-#[derive(Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
 pub struct SigningInfo {
     pub signing_key: PathBuf,
     pub signing_cert: PathBuf,
