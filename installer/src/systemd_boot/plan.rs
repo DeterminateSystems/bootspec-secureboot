@@ -68,6 +68,7 @@ pub(crate) struct PlanArgs<'a> {
     pub wanted_generations: &'a [Generation],
     pub default_generation: &'a Generation,
     pub identified_files: IdentifiedFiles,
+    pub signing_info: &'a Option<SigningInfo>,
 }
 
 pub(crate) fn create_plan(plan_args: PlanArgs) -> Result<SystemdBootPlan> {
@@ -93,7 +94,7 @@ pub(crate) fn create_plan(plan_args: PlanArgs) -> Result<SystemdBootPlan> {
         plan.push(SystemdBootPlanState::Update { bootctl, esp });
     }
 
-    if let Some(signing_info) = &args.signing_info.0 {
+    if let Some(signing_info) = &plan_args.signing_info {
         let mut to_sign = vec![
             esp.join("EFI/systemd/systemd-bootx64.efi"),
             esp.join("EFI/BOOT/BOOTX64.EFI"),
@@ -115,7 +116,7 @@ pub(crate) fn create_plan(plan_args: PlanArgs) -> Result<SystemdBootPlan> {
     });
 
     plan.push(SystemdBootPlanState::ReplaceFiles {
-        signing_info: &args.signing_info,
+        signing_info: &plan_args.signing_info,
         to_replace: identified_files.to_replace,
     });
 
