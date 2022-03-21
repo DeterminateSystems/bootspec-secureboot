@@ -28,11 +28,11 @@ struct Args {
     /// TODO
     #[clap(long)]
     timeout: Option<usize>,
-    #[clap(long)]
     /// TODO
+    #[clap(long)]
     console_mode: String,
-    #[clap(long)]
     /// TODO
+    #[clap(long)]
     configuration_limit: Option<usize>,
     /// TODO
     #[clap(long)]
@@ -44,30 +44,30 @@ struct Args {
     #[clap(long)]
     install: bool,
 
-    #[clap(long)]
     // EFI-specific arguments
     /// The path to the EFI System Partition(s)
+    #[clap(long)]
     esp: Vec<PathBuf>,
     /// Whether or not to touch EFI vars in the NVRAM
     #[clap(long)]
     can_touch_efi_vars: bool,
-    #[clap(long)]
     /// TODO: bootctl path
+    #[clap(long)]
     bootctl: Option<PathBuf>,
     /// Whether to use unified EFI files
     #[clap(long)]
     unified_efi: bool,
-    #[clap(long, requires_all = &["signing-cert", "sbsign", "sbverify"])]
     /// The signing key used for Secure Boot
+    #[clap(long, requires_all = &["signing-cert", "sbsign", "sbverify"])]
     signing_key: Option<PathBuf>,
-    #[clap(long, requires_all = &["signing-key", "sbsign", "sbverify"])]
     /// The signing cert used for Secure Boot
+    #[clap(long, requires_all = &["signing-key", "sbsign", "sbverify"])]
     signing_cert: Option<PathBuf>,
-    #[clap(long, requires_all = &["signing-key", "signing-cert", "sbverify"])]
     /// The sbsign binary to sign the files for Secure Boot
+    #[clap(long, requires_all = &["signing-key", "signing-cert", "sbverify"])]
     sbsign: Option<PathBuf>,
-    #[clap(long, requires_all = &["signing-key", "signing-cert", "sbsign"])]
     /// The sbverify binary to sign the files for Secure Boot
+    #[clap(long, requires_all = &["signing-key", "signing-cert", "sbsign"])]
     sbverify: Option<PathBuf>,
 }
 
