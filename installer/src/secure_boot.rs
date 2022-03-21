@@ -5,7 +5,7 @@ use log::debug;
 
 use crate::Result;
 
-#[derive(Debug, PartialEq, PartialOrd, clap::Args)]
+#[derive(Clone, Debug, PartialEq, PartialOrd, clap::Args)]
 pub struct SigningInfo {
     /// Path to signing-key file to use when signing secure boot
     #[clap(long, required = false)]
