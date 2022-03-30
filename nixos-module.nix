@@ -53,7 +53,7 @@ in
                 "--generated-entries"
                 "./systemd-boot-entries"
               ]
-              ++ (lib.optional config.boot.loader.efi.canTouchEfiVariables "--touch-efi-vars")
+              ++ (lib.optional config.boot.loader.efi.canTouchEfiVariables "--can-touch-efi-vars")
               ++ (lib.optionals (config.boot.loader.systemd-boot.configurationLimit != null) [
                 "--configuration-limit"
                 "${toString config.boot.loader.systemd-boot.configurationLimit}"
