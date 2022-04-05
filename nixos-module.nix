@@ -67,6 +67,8 @@ in
                 config.boot.loader.secureboot.signingCertPath
               ])
               ++ (lib.optionals config.boot.loader.secureboot.enable [
+                "--unified-efi"
+
                 "--sbsign"
                 "${pkgs.sbsigntool}/bin/sbsign"
 
