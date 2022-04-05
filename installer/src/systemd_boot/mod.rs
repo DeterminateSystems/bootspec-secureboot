@@ -142,7 +142,7 @@ fn remove_old_files(generations: &[Generation], path: &Path) -> Result<()> {
     debug!("calculating required filenames");
     let required_filenames = self::get_required_filenames(generations.to_vec());
 
-    trace!("Required files calculated: {:#?}", required_filenames);
+    trace!("required files calculated: {:#?}", required_filenames);
 
     debug!("removing old entries");
     for entry in fs::read_dir(loader_entries)? {
@@ -155,7 +155,7 @@ fn remove_old_files(generations: &[Generation], path: &Path) -> Result<()> {
         }
 
         if !required_filenames.iter().any(|e| e == name) {
-            trace!("Removing entry file {:?}", f);
+            trace!("removing entry file {:?}", f);
             fs::remove_file(f)?;
         }
     }
@@ -166,7 +166,7 @@ fn remove_old_files(generations: &[Generation], path: &Path) -> Result<()> {
         let name = f.file_name().ok_or("filename terminated in ..")?;
 
         if !required_filenames.iter().any(|e| e == name) {
-            trace!("Removing kernel/initrd file {:?}", f);
+            trace!("removing kernel/initrd file {:?}", f);
             fs::remove_file(f)?;
         }
     }
