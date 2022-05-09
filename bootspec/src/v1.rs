@@ -16,12 +16,10 @@ pub const JSON_FILENAME: &str = "boot.v1.json";
 pub struct BootJsonV1 {
     /// The version of the boot.json schema
     pub schema_version: u32,
-    /// NixOS version
-    pub system_version: String,
+    /// Label for the system closure
+    pub label: String,
     /// Path to kernel (bzImage) -- $toplevel/kernel
     pub kernel: PathBuf,
-    /// Kernel version
-    pub kernel_version: String,
     /// list of kernel parameters
     pub kernel_params: Vec<String>,
     /// Path to the init script

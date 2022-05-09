@@ -20,9 +20,7 @@ pub struct BootSpecPath(pub PathBuf);
 /// Provides the information necessary to consume a specialisation with or without a bootspec.
 pub struct SpecialisationDescription {
     /// The optional path to the specialisation's bootspec.
-    pub bootspec: Option<BootSpecPath>,
-    /// The specialisation's toplevel.
-    pub toplevel: SystemConfigurationRoot,
+    pub bootspec: BootSpecPath,
 }
 
 // !!! IMPORTANT: KEEP `BootJson`, `SCHEMA_VERSION`, and `JSON_FILENAME` IN SYNC !!!
