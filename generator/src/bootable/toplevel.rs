@@ -9,12 +9,10 @@ use crate::Result;
 
 #[derive(Debug, Default)]
 pub struct BootableToplevel {
-    /// NixOS version
-    pub system_version: String,
+    /// NixOS system label
+    pub label: String,
     /// Path to kernel (bzImage) -- $toplevel/kernel
     pub kernel: PathBuf,
-    /// Kernel version
-    pub kernel_version: String,
     /// list of kernel parameters
     pub kernel_params: Vec<String>,
     /// Path to the init script
@@ -47,14 +45,13 @@ impl BootableToplevel {
         let ctime = fs::metadata(&self.toplevel.0)?.ctime();
         let date = Local.timestamp(ctime, 0).format("%Y-%m-%d");
         let description = format!(
-            "NixOS {system_version}{specialisation}, Linux Kernel {kernel_version}, Built on {date}",
+            "{label}{specialisation}, Built on {date}",
             specialisation = if let Some(ref specialisation) = self.specialisation_name {
                 format!(", Specialisation {}", specialisation.0)
             } else {
                 format!("")
             },
-            system_version = self.system_version,
-            kernel_version = self.kernel_version,
+            label = self.label,
             date = date,
         );
 
