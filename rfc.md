@@ -58,7 +58,7 @@ Systemd’s bootloader specification is a good format for a different problem. A
 # Goals
 [goals]: #goals
 
-- Enable a more uniform bootloader feature support across our packaged bootloaders. Concretely, converting most of the NO’s in the feature matrix to YES’s.
+- Enable a more uniform bootloader feature support across our packaged bootloaders. Concretely, making it relatively straightforward to convert most of the empty spaces in the feature matrix to YES's.
 - Enable users of NixOS to implement custom bootloader tools and policy without needing to dive through the system profiles, and without patching Nixpkgs / NixOS.
 - Define a stable specification of a generation’s boot data which internal and external users can rely on. Changes to the specification should go through an RFC.
 
