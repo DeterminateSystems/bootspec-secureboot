@@ -36,7 +36,7 @@ fn cli() -> Result<()> {
         .parse::<PathBuf>()?;
 
     let bootspec = synthesize::synthesize_schema_from_generation(&generation_dir)
-        .map_err(|e| format!("Failed to synthesize bootspec:\n{}", e))?;
+        .map_err(|e| format!("Failed to synthesize bootspec for {}:\n{}", generation_dir.display(), e))?;
     let pretty = serde_json::to_string_pretty(&bootspec)
         .map_err(|e| format!("Failed to make pretty JSON from bootspec:\n{}", e))?;
 
