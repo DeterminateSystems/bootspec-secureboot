@@ -73,22 +73,22 @@ Using the following JSON:
 
 ```yaml
 {
-	# Version of the specification used in the document
+  # Version of the specification used in the document
   "schemaVersion": 1,
 
   # Path to the stage-2 init, executed by the initrd
   "init": "/nix/store/xxx-nixos-system-xxx/init",
 
-	# Path to the initrd
+  # Path to the initrd
   "initrd": "/nix/store/xxx-initrd-linux/initrd",
 
-	# Optional path to a tool to dynamically add secrets to an initrd
+  # Optional path to a tool to dynamically add secrets to an initrd
   "initrdSecrets": "/nix/store/xxx-append-secrets/bin/append-initrd-secrets",
 
-	# Path to the kernel image
+  # Path to the kernel image
   "kernel": "/nix/store/xxx-linux/bzImage",
 
-	# Kernel commandline options
+  # Kernel commandline options
   "kernelParams": [
     "amd_iommu=on",
     "amd_iommu=pt",
@@ -100,7 +100,7 @@ Using the following JSON:
     "loglevel=4"
   ],
 
-	# Kernel version for display purposes only
+  # Kernel version for display purposes only
   "kernelVersion": "5.12.19-zen2",
 
   # The version of the system, known  as `config.system.nixos.label`
@@ -109,7 +109,6 @@ Using the following JSON:
   # Top level path of the closure, in case some spelunking is required
   "toplevel": "/nix/store/xxx-nixos-system-xxx",
 
-	#
   "specialisation": {
     # <name> corresponds to <name> in specialisation.<name>.configuration.
     # Note: a specialisation's bootspec document should not contain any specialisations.
