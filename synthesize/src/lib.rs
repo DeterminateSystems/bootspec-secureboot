@@ -51,23 +51,25 @@ pub fn synthesize_schema_from_generation(generation: &Path) -> Result<BootJson> 
     let initrd_secrets = generation.join("append-initrd-secrets");
 
     let mut specialisation: HashMap<SpecialisationName, SpecialisationDescription> = HashMap::new();
-    for spec in fs::read_dir(generation.join("specialisation"))?.map(|res| res.map(|e| e.path())) {
-        let spec = spec?;
-        let name = spec
-            .file_name()
-            .ok_or("Could not get name of specialisation dir")?
-            .to_str()
-            .ok_or("Specialisation dir name was invalid UTF8")?;
-        let toplevel = fs::canonicalize(generation.join(format!("specialisation/{}", name)))?;
+    if let Ok(specialisations) = fs::read_dir(generation.join("specialisation")) {
+        for spec in specialisations.map(|res| res.map(|e| e.path())) {
+            let spec = spec?;
+            let name = spec
+                .file_name()
+                .ok_or("Could not get name of specialisation dir")?
+                .to_str()
+                .ok_or("Specialisation dir name was invalid UTF8")?;
+            let toplevel = fs::canonicalize(generation.join(format!("specialisation/{}", name)))?;
 
-        let boot_json_path = toplevel.join(JSON_FILENAME);
-        if boot_json_path.exists() {
-            specialisation.insert(
-                SpecialisationName(name.to_string()),
-                SpecialisationDescription {
-                    bootspec: BootSpecPath(boot_json_path),
-                },
-            );
+            let boot_json_path = toplevel.join(JSON_FILENAME);
+            if boot_json_path.exists() {
+                specialisation.insert(
+                    SpecialisationName(name.to_string()),
+                    SpecialisationDescription {
+                        bootspec: BootSpecPath(boot_json_path),
+                    },
+                );
+            }
         }
     }
 
