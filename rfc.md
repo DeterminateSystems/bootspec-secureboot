@@ -1,13 +1,15 @@
 # RFC: BootSpec
 
 Created: May 6, 2022 2:16 PM
-Last Edited Time: May 9, 2022 10:04 AM
+Last Edited Time: May 9, 2022 10:05 AM
 Stakeholders: Anonymous
 Type: Technical Spec
 
 # Summary
 
-Create a stable, comprehensive, and machine-parsable definition of a NixOS Generation as an intermediate representation (IR) between the NixOS system definition and the bootloader management tools.
+Bootspec is a set of memoized facts about a system’s closure. These facts are used as the primary input for bootloader backends like systemd-boot and grub, for creating files in `/boot/loader/entries/` and `grub.cfg`.
+
+In this proposal we create a stable, comprehensive, and machine-parsable definition of a NixOS Generation as an intermediate representation (IR) between the NixOS system definition and the bootloader management tools.
 
 # Motivation
 
@@ -19,10 +21,10 @@ If we survey the current set of bootloader and feature matrix, we see a bit of a
 | --- | --- | --- | --- | --- | --- |
 | systemd-boot | YES | YES | YES | YES | YES |
 | grub | YES | YES | YES | YES | YES |
-| generic-extlinux-compatible | YES | NO | NO | NO | YES |
-| generations-dir | NO | NO | NO | NO | NO |
-| init-script | NO | NO | NO | YES | NO |
-| raspberrypi | YES | NO | NO | NO | NO |
+| generic-extlinux-compatible | YES |  |  |  | YES |
+| raspberrypi | YES |  |  |  |  |
+| init-script |  |  |  | YES |  |
+| generations-dir |  |  |  |  |  |
 
 One reason the matrix is not filled out is the technical difficulty of implementing these various features. The current API for detecting most of this information is by globbing directories looking for specific files.
 
@@ -54,12 +56,13 @@ Systemd’s bootloader specification is a good format for a different problem. A
 
 ### Non-Goals
 
-- Rewriting the existing bootloaders to actually fill out the feature matrix. The goal of this RFC is to make the feature development *easier*, not actually do it.
+- Rewriting the existing bootloader backends to actually fill out the feature matrix. The goal of this RFC is to make the feature development *easier*, not actually do it.
 - Supporting SecureBoot. The authors of this RFC have done work in this regard, but this RFC is not about SecureBoot.
 
 # Proposed Solution
 
 - Each NixOS generation will have a bootspec (a JSON document) at `$out/boot.v1.json` containing all of the boot properties for that generation. NixOS’s bootloader backends will read these files as inputs to the bootloader installation phase.
+    - The bootloader installation phase is relatively unchanged from the way it is now. The bootloader backend will have an executable that is run against a collection of generations, and the backend is any of the currently supported backends plus an “external” backend which the user can define.
 - The bootloader backends will avoid reading data from the other files and directories when possible, preferring the information in the bootspec.
 - A bootspec synthesizing tool will be used to synthesize a bootspec for generations which don’t already have one. This tool will be shared across all of the bootloader backends, helping produce more uniform behavior.
 - Existing bootloader backends will be updated to read properties from the bootspec, removing most if not all of their filesystem-spelunking code.
@@ -97,7 +100,7 @@ Using the following JSON:
     "loglevel=4"
   ],
 
-	# Kernel version for display
+	# Kernel version for display purposes only
   "kernelVersion": "5.12.19-zen2",
 
   # The version of the system, known  as `config.system.nixos.label`
@@ -111,13 +114,8 @@ Using the following JSON:
     # <name> corresponds to <name> in specialisation.<name>.configuration.
     # Note: a specialisation's bootspec document should not contain any specialisations.
     "<name>": {
-      # bootspec is optional, the path to a bootspec document
-      # It is optional to account for closures which do not
-      # have a bootspec and where one must be generated.
+      # bootspec is the path to a bootspec document
       "bootspec": "/path/to/a/bootspec.v1.json",
-
-      # Path to the top-level path of the closure, in case further spelunking is required.
-      "toplevel": "/nix/store/xxx-nixos-system-yyy"
     }
   }
 }
@@ -135,9 +133,29 @@ Using the following JSON:
 - Update the bootloader backends to use bootspec as its primary source of installation data.
 - Implement a NixOS module which supports external bootloader tooling.
 
+# FAQ
+
+**Does this involve patching any of the bootloaders?**
+
+No: this work is all about creating a cleaner interface for the tools we maintain which generate the files and configuration for our supported bootloaders.
+
+**Why can’t we solve this with the module system?**
+
+The problem is about the step where we impurely execute the bootloader backend to update the system’s bootloader. This is very far post-evaluation. The module system will of course be involved in the writing out of the bootspec document.
+
+**How is this easier than `if (-f "$out/append-initrd-secrets")`?**
+
+The main problem with that approach is there are a lot of files that you need to look for and examine in specific ways. We end up duplicating a lot of work across bootloader backends to “learn” about the system. By creating a source of truth for this information the bootloader backends can focus more on the work that is unique to their problem.
+
+Doing this work now may also make it easier to refactor a NixOS system’s `$out` , reducing the number of symlinks and “noise” if we wanted to do that.
+
+**Does this interrupt the work to make stage-1 based on systemd?**
+
+No. Stage-1 won’t use this document at all.
+
 # Open Questions
 
-- Having `specialisation.<name>.bootspec` optional may be a mistake.
+- n/a
 
 # Future Work
 
