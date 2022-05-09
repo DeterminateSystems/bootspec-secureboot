@@ -152,6 +152,10 @@ Doing this work now may also make it easier to refactor a NixOS system’s `$out
 
 No. Stage-1 won’t use this document at all.
 
+**What about memtest and other boot options?**
+
+That should be left to configuration passed to the bootloader backend. There could be any number of "extra" bootables like this, and importantly they have nothing to do with a specific NixOS system closure. Concretely, a user who enables memtest probably wants the most recent memtest, and not one memtest from every generation.
+
 # Open Questions
 
 - n/a
