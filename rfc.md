@@ -1,17 +1,22 @@
-# RFC: BootSpec
-
-Created: May 6, 2022 2:16 PM
-Last Edited Time: May 9, 2022 10:05 AM
-Stakeholders: Anonymous
-Type: Technical Spec
+---
+feature: bootspec
+start-date: 2022-05-09
+author: Graham Christensen
+co-authors: Cole Helbling
+shepherd-team: (names, to be nominated and accepted by RFC steering committee)
+shepherd-leader: (name to be appointed by RFC steering committee)
+related-issues: (will contain links to implementation PRs)
+---
 
 # Summary
+[summary]: #summary
 
 Bootspec is a set of memoized facts about a system’s closure. These facts are used as the primary input for bootloader backends like systemd-boot and grub, for creating files in `/boot/loader/entries/` and `grub.cfg`.
 
 In this proposal we create a stable, comprehensive, and machine-parsable definition of a NixOS Generation as an intermediate representation (IR) between the NixOS system definition and the bootloader management tools.
 
 # Motivation
+[motivation]: #motivation
 
 NixOS’s bootloader backends don’t support a uniform collection of features and design decisions, partially due to the complexity of implementing the features. Using a statically parsable bootspec definition reduces the work involved in implementing bootloader support.
 
@@ -35,6 +40,7 @@ By forcing implementations to spelunk the filesystem, we create a complicated pr
 - Our current tools can only support limited workflows, and are difficult to extend.
 
 ## Supporting Externalized Bootloader Backends
+[externalized-bootloaders]: #externalized-bootloaders
 
 Our NixOS-provided tooling is sufficient for most use cases; however, there are more complicated cases that are not adequately covered by our tools and would not be appropriate to include in NixOS directly. Let’s use SecureBoot as an example.
 
@@ -45,21 +51,25 @@ An enterprise deployment of SecureBoot may have a centralized signing service wi
 There are infinitely many policy choices and implementations possible, and a good solution here is to allow deployers of NixOS to implement their own bootloader management tools. By creating a well defined specification of generations and the boot-relevant data we enable this external development.
 
 ## What about systemd's Bootloader Specification?
+[systemd-bootloader-specification]: #systemd-bootloader-specification
 
 Systemd’s bootloader specification is a good format for a different problem. A single NixOS generation can contain multiple bootable systems and options, with additional features unique to NixOS built on top. Most Linux distributions don’t deal with many unique and ever-changing bootables. This proposal is specifically to deal with the collection of bootables and improve our ability to interface with.
 
 # Goals
+[goals]: #goals
 
 - Enable a more uniform bootloader feature support across our packaged bootloaders. Concretely, converting most of the NO’s in the feature matrix to YES’s.
 - Enable users of NixOS to implement custom bootloader tools and policy without needing to dive through the system profiles, and without patching Nixpkgs / NixOS.
 - Define a stable specification of a generation’s boot data which internal and external users can rely on. Changes to the specification should go through an RFC.
 
 ### Non-Goals
+[non-goals]: #non-goals
 
 - Rewriting the existing bootloader backends to actually fill out the feature matrix. The goal of this RFC is to make the feature development *easier*, not actually do it.
 - Supporting SecureBoot. The authors of this RFC have done work in this regard, but this RFC is not about SecureBoot.
 
 # Proposed Solution
+[proposed-solution]: #proposed-solution
 
 - Each NixOS generation will have a bootspec (a JSON document) at `$out/boot.v1.json` containing all of the boot properties for that generation. NixOS’s bootloader backends will read these files as inputs to the bootloader installation phase.
     - The bootloader installation phase is relatively unchanged from the way it is now. The bootloader backend will have an executable that is run against a collection of generations, and the backend is any of the currently supported backends plus an “external” backend which the user can define.
@@ -68,6 +78,8 @@ Systemd’s bootloader specification is a good format for a different problem. A
 - Existing bootloader backends will be updated to read properties from the bootspec, removing most if not all of their filesystem-spelunking code.
 
 ### Bootspec Format v1
+[format-v1]: #format-v1
+
 
 Using the following JSON:
 
@@ -120,11 +132,13 @@ Using the following JSON:
 ```
 
 ### Risks
+[risks]: #risks
 
 - Some of the bootloader backends are quite complicated, and in many cases have inadequate tests. We could accidentally break corner cases.
 - The bootloader backends are inherently a weak point for NixOS, as it is our last option for rolling back. We cannot roll back a broken bootloader. This and the previous point are risks, but also help demonstrate the value of reducing the amount of code and complexity in the generator.
 
 ### Milestones
+[milestones]: #milestones
 
 - Create and package the backwards compatibility synthesizer as a standalone tool. A version of it already exists, but it is not standalone.
 - Generate the bootspec files as part of building the system closure.
@@ -132,6 +146,7 @@ Using the following JSON:
 - Implement a NixOS module which supports external bootloader tooling.
 
 # FAQ
+[faq]: #faq
 
 **Does this involve patching any of the bootloaders?**
 
@@ -157,10 +172,12 @@ No. Stage-1 won’t use this document at all.
 That should be left to configuration passed to the bootloader backend. There could be any number of "extra" bootables like this, and importantly they have nothing to do with a specific NixOS system closure. Concretely, a user who enables memtest probably wants the most recent memtest, and not one memtest from every generation.
 
 # Open Questions
+[open-questions]: #open-questions
 
 - Should there be a general-purpose "meta" or "extensions" field which allows arbitrary extension of the data? What should this look like?
 
 # Future Work
+[future]: #future-work
 
 - Completing the migration from filesystem-spelunking into using the bootspec data.
 - Implementing a NixOS module for supporting externalized bootloader backends.
