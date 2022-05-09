@@ -36,11 +36,11 @@ By forcing implementations to spelunk the filesystem, we create a complicated pr
 
 ## Supporting Externalized Bootloader Backends
 
-Our NixOS-provided tooling is sufficient for most use cases, however there are more complicated cases that are not adequately covered by our tools and would not be appropriate to include in NixOS directly. Let’s use SecureBoot as an example.
+Our NixOS-provided tooling is sufficient for most use cases; however, there are more complicated cases that are not adequately covered by our tools and would not be appropriate to include in NixOS directly. Let’s use SecureBoot as an example.
 
-A naive, single-user implementation of SecureBoot has signing keys on the local filesystem, and every `nixos-rebuild boot` call signs the relevant files. This is a valid method of implementation, however it isn’t sufficient for larger deployments.
+A naive, single-user implementation of SecureBoot may have signing keys on the local filesystem, and every `nixos-rebuild boot` call signs the relevant files. This is a valid method of implementation, but is insufficient for larger deployments.
 
-An enterprise deployment of SecureBoot probably has a centralized signing service with careful auditing about what is signed. It is more likely that the signed bootloader files come prebuilt and presigned from upstream and an unsigned file means a violation of policy. This is also a valid implementation, but is too heavy for a single user.
+An enterprise deployment of SecureBoot may have a centralized signing service with careful auditing about what is signed. It is more likely that the signed bootloader files come prebuilt and presigned from upstream and an unsigned file means a violation of policy. This is also a valid implementation, but is too heavy for a single user.
 
 There are infinitely many policy choices and implementations possible, and a good solution here is to allow deployers of NixOS to implement their own bootloader management tools. By creating a well defined specification of generations and the boot-relevant data we enable this external development.
 
@@ -52,7 +52,7 @@ Systemd’s bootloader specification is a good format for a different problem. A
 
 - Enable a more uniform bootloader feature support across our packaged bootloaders. Concretely, converting most of the NO’s in the feature matrix to YES’s.
 - Enable users of NixOS to implement custom bootloader tools and policy without needing to dive through the system profiles, and without patching Nixpkgs / NixOS.
-- Define a stable specification of a generation’s boot data which internal and external users can rely on. Changing to the specification should go through an RFC.
+- Define a stable specification of a generation’s boot data which internal and external users can rely on. Changes to the specification should go through an RFC.
 
 ### Non-Goals
 
