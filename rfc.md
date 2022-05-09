@@ -100,11 +100,10 @@ Using the following JSON:
     "loglevel=4"
   ],
 
-  # Kernel version for display purposes only
-  "kernelVersion": "5.12.19-zen2",
-
-  # The version of the system, known  as `config.system.nixos.label`
-  "systemVersion": "21.11.20210810.dirty",
+  # The label of the system. It should contain the operating system, kernel version,
+  # and other user-relevant information to identify the system. This corresponds
+  # loosely to `config.system.nixos.label`.
+  "label": "NixOS 21.11.20210810.dirty (Linux 5.15.30)",
 
   # Top level path of the closure, in case some spelunking is required
   "toplevel": "/nix/store/xxx-nixos-system-xxx",
