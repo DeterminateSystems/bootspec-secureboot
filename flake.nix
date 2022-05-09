@@ -35,9 +35,6 @@
 
       packages = forAllSystems
         ({ system, pkgs, ... }:
-          let
-            patched_sbattach = import ./installer/patched-sbattach.nix { inherit pkgs; };
-          in
           {
             package = pkgs.rustPlatform.buildRustPackage rec {
               pname = "bootspec";
@@ -46,23 +43,9 @@
               src = self;
 
               cargoLock.lockFile = ./Cargo.lock;
-
-              postPatch = ''
-                substituteInPlace installer/build.rs \
-                  --replace "@patched_sbattach@" "${patched_sbattach}"
-              '';
             };
           });
 
       defaultPackage = forAllSystems ({ system, ... }: self.packages.${system}.package);
-
-      nixosModules.bootspec = {
-        imports = [ ./nixos-module.nix ];
-        nixpkgs.overlays = [
-          (final: prev: {
-            bootspec = self.defaultPackage."${final.system}";
-          })
-        ];
-      };
     };
 }
