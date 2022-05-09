@@ -61,26 +61,20 @@ pub fn synthesize_schema_from_generation(generation: &Path) -> Result<BootJson> 
         let toplevel = fs::canonicalize(generation.join(format!("specialisation/{}", name)))?;
 
         let boot_json_path = toplevel.join(JSON_FILENAME);
-        let boot_json_path = if boot_json_path.exists() {
-            Some(boot_json_path)
-        } else {
-            None
-        };
-
-        specialisation.insert(
-            SpecialisationName(name.to_string()),
-            SpecialisationDescription {
-                toplevel: SystemConfigurationRoot(toplevel),
-                bootspec: boot_json_path.map(BootSpecPath),
-            },
-        );
+        if boot_json_path.exists() {
+            specialisation.insert(
+                SpecialisationName(name.to_string()),
+                SpecialisationDescription {
+                    bootspec: BootSpecPath(boot_json_path),
+                },
+            );
+        }
     }
 
     Ok(BootJson {
         schema_version: SCHEMA_VERSION,
-        system_version,
+        label: format!("NixOS {} (Linux {})", system_version, kernel_version),
         kernel,
-        kernel_version: kernel_version.to_string(),
         kernel_params,
         init,
         initrd,
@@ -172,9 +166,8 @@ mod tests {
             spec,
             BootJson {
                 schema_version: SCHEMA_VERSION,
-                system_version,
+                label: "NixOS test-version-1 (Linux 1.1.1-test1)".into(),
                 kernel: generation.join("kernel-modules/bzImage"),
-                kernel_version,
                 kernel_params,
                 init: generation.join("init"),
                 initrd: generation.join("initrd"),
@@ -239,9 +232,8 @@ mod tests {
             spec,
             BootJson {
                 schema_version: SCHEMA_VERSION,
-                system_version,
+                label: "NixOS test-version-3 (Linux 1.1.1-test3)".into(),
                 kernel: generation.join("kernel-modules/bzImage"),
-                kernel_version,
                 kernel_params,
                 init: generation.join("init"),
                 initrd: generation.join("initrd"),
