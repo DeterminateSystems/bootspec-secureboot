@@ -156,6 +156,7 @@ No: this work is all about creating a cleaner interface for the tools we maintai
 
 Boot-menu generation is by definition cross-generation.
 Bootloader backends, by definition reconfigure the boot partition and records, and are supposed to apply retroactively to old configurations.
+This regeneration happens way beyond the lifecycle of the module system.
 
 **How is this easier than `if (-f "$out/append-initrd-secrets")`?**
 
