@@ -140,7 +140,8 @@ No: this work is all about creating a cleaner interface for the tools we maintai
 
 **Why can’t we solve this with the module system?**
 
-The problem is about the step where we impurely execute the bootloader backend to update the system’s bootloader. This is very far post-evaluation. The module system will of course be involved in the writing out of the bootspec document.
+Boot-menu generation is by definition cross-generation.
+Bootloader backends reconfiguring the boot partition and records, and are supposed to apply retroactively to old configurations.
 
 **How is this easier than `if (-f "$out/append-initrd-secrets")`?**
 
@@ -158,7 +159,7 @@ That should be left to configuration passed to the bootloader backend. There cou
 
 # Open Questions
 
-- n/a
+- Should there be a general-purpose "meta" field which allows arbitrary extension of the data?
 
 # Future Work
 
