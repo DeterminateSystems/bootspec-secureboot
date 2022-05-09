@@ -14,7 +14,7 @@ related-issues: (will contain links to implementation PRs)
 Bootspec is a set of memoized facts about a system's closure.
 These facts are used as the primary input for bootloader backends like systemd-boot and grub, for creating files in `/boot/loader/entries/` and `grub.cfg`.
 
-In this proposal we create a stable, comprehensive, and machine-parsable definition of a NixOS Generation as an intermediate representation (IR) between the NixOS system definition and the bootloader management tools.
+In this proposal, we create a stable, comprehensive, and machine-parsable definition of a NixOS Generation as an intermediate representation (IR) between the NixOS system definition and the bootloader management tools.
 
 # Motivation
 [motivation]: #motivation
@@ -24,14 +24,14 @@ Using a statically parsable bootspec definition reduces the work involved in imp
 
 If we survey the current set of bootloader and feature matrix, we see a bit of a smattering:
 
-| Bootloader | Generation limits | Initrd Secrets | Multiple Profiles | Specialisation | Custom Labels |
-| --- | --- | --- | --- | --- | --- |
-| systemd-boot | YES | YES | YES | YES | YES |
-| grub | YES | YES | YES | YES | YES |
-| generic-extlinux-compatible | YES |  |  |  | YES |
-| raspberrypi | YES |  |  |  |  |
-| init-script |  |  |  | YES |  |
-| generations-dir |  |  |  |  |  |
+| Bootloader                  | Generation limits | Initrd Secrets | Multiple Profiles | Specialisation | Custom Labels |
+| --------------------------- | ----------------- | -------------- | ----------------- | -------------- | ------------- |
+| systemd-boot                | YES               | YES            | YES               | YES            | YES           |
+| grub                        | YES               | YES            | YES               | YES            | YES           |
+| generic-extlinux-compatible | YES               |                |                   |                | YES           |
+| raspberrypi                 | YES               |                |                   |                |               |
+| init-script                 |                   |                |                   | YES            |               |
+| generations-dir             |                   |                |                   |                |               |
 
 One reason the matrix is not filled out is the technical difficulty of implementing these various features.
 The current API for detecting most of this information is by globbing directories looking for specific files.
