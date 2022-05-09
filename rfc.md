@@ -83,24 +83,24 @@ Systemd's bootloader specification is a good format for a different problem. A s
 
 Using the following JSON:
 
-```yaml
+```json5
 {
-  # Version of the specification used in the document
+  // Version of the specification used in the document
   "schemaVersion": 1,
 
-  # Path to the stage-2 init, executed by the initrd
+  // Path to the stage-2 init, executed by the initrd
   "init": "/nix/store/xxx-nixos-system-xxx/init",
 
-  # Path to the initrd
+  // Path to the initrd
   "initrd": "/nix/store/xxx-initrd-linux/initrd",
 
-  # Optional path to a tool to dynamically add secrets to an initrd
+  // Optional path to a tool to dynamically add secrets to an initrd
   "initrdSecrets": "/nix/store/xxx-append-secrets/bin/append-initrd-secrets",
 
-  # Path to the kernel image
+  // Path to the kernel image
   "kernel": "/nix/store/xxx-linux/bzImage",
 
-  # Kernel commandline options
+  // Kernel commandline options
   "kernelParams": [
     "amd_iommu=on",
     "amd_iommu=pt",
@@ -112,19 +112,19 @@ Using the following JSON:
     "loglevel=4"
   ],
 
-  # The label of the system. It should contain the operating system, kernel version,
-  # and other user-relevant information to identify the system. This corresponds
-  # loosely to `config.system.nixos.label`.
+  // The label of the system. It should contain the operating system, kernel version,
+  // and other user-relevant information to identify the system. This corresponds
+  // loosely to `config.system.nixos.label`.
   "label": "NixOS 21.11.20210810.dirty (Linux 5.15.30)",
 
-  # Top level path of the closure, in case some spelunking is required
+  // Top level path of the closure, in case some spelunking is required
   "toplevel": "/nix/store/xxx-nixos-system-xxx",
 
   "specialisation": {
-    # <name> corresponds to <name> in specialisation.<name>.configuration.
-    # Note: a specialisation's bootspec document should not contain any specialisations.
+    // <name> corresponds to <name> in specialisation.<name>.configuration.
+    // Note: a specialisation's bootspec document should not contain any specialisations.
     "<name>": {
-      # bootspec is the path to a bootspec document
+      // bootspec is the path to a bootspec document
       "bootspec": "/path/to/a/bootspec.v1.json",
     }
   }
