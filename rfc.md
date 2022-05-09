@@ -140,7 +140,7 @@ No: this work is all about creating a cleaner interface for the tools we maintai
 **Why can’t we solve this with the module system?**
 
 Boot-menu generation is by definition cross-generation.
-Bootloader backends reconfiguring the boot partition and records, and are supposed to apply retroactively to old configurations.
+Bootloader backends, by definition reconfigure the boot partition and records, and are supposed to apply retroactively to old configurations.
 
 **How is this easier than `if (-f "$out/append-initrd-secrets")`?**
 
@@ -158,7 +158,7 @@ That should be left to configuration passed to the bootloader backend. There cou
 
 # Open Questions
 
-- Should there be a general-purpose "meta" field which allows arbitrary extension of the data?
+- Should there be a general-purpose "meta" or "extensions" field which allows arbitrary extension of the data? What should this look like?
 
 # Future Work
 
