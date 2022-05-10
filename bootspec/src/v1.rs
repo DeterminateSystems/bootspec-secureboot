@@ -28,8 +28,7 @@ pub struct BootJsonV1 {
     pub initrd: PathBuf,
     /// Path to "append-initrd-secrets" script -- $toplevel/append-initrd-secrets
     pub initrd_secrets: Option<PathBuf>,
-    /// Mapping of specialisation names to their boot.json (or `None` if it doesn't exist) and their
-    /// toplevel
+    /// Mapping of specialisation names to their boot.json
     pub specialisation: HashMap<SpecialisationName, SpecialisationDescription>,
     /// config.system.build.toplevel path
     pub toplevel: SystemConfigurationRoot,
