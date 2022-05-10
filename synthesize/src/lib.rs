@@ -48,7 +48,7 @@ pub fn synthesize_schema_from_generation(generation: &Path) -> Result<BootJson> 
     let initrd = fs::canonicalize(generation.join("initrd"))
         .map_err(|e| format!("Failed to canonicalize the initrd:\n{}", e))?;
 
-    let initrd_secrets = generation.join("append-initrd-secrets");
+    let initrd_secrets = Some(generation.join("append-initrd-secrets"));
 
     let mut specialisation: HashMap<SpecialisationName, SpecialisationDescription> = HashMap::new();
     if let Ok(specialisations) = fs::read_dir(generation.join("specialisation")) {
@@ -173,7 +173,7 @@ mod tests {
                 kernel_params,
                 init: generation.join("init"),
                 initrd: generation.join("initrd"),
-                initrd_secrets: generation.join("append-initrd-secrets"),
+                initrd_secrets: Some(generation.join("append-initrd-secrets")),
                 specialisation: HashMap::new(),
                 toplevel: SystemConfigurationRoot(generation),
             }
@@ -239,7 +239,7 @@ mod tests {
                 kernel_params,
                 init: generation.join("init"),
                 initrd: generation.join("initrd"),
-                initrd_secrets: generation.join("append-initrd-secrets"),
+                initrd_secrets: Some(generation.join("append-initrd-secrets")),
                 specialisation: HashMap::new(),
                 toplevel: SystemConfigurationRoot(generation),
             }
