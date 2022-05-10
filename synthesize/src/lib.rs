@@ -14,7 +14,54 @@ pub type Result<T, E = Box<dyn Error + Send + Sync + 'static>> = core::result::R
 /// Synthesize a [`BootJson`] struct from the path to a generation.
 ///
 /// This is useful when used on generations that do not have a bootspec attached to it.
-pub fn synthesize_schema_from_generation(generation: &Path) -> Result<BootJson> {
+pub fn synthesize_schema_from_generation(generation: &Path, out_path: &Path) -> Result<()> {
+    fs::create_dir(&out_path)?;
+    let specialisationdir = out_path.join("specialisation");
+    fs::create_dir(&specialisationdir)?;
+
+    let mut toplevelspec = describe_system(&generation)?;
+
+    if let Ok(specialisations) = fs::read_dir(generation.join("specialisation")) {
+        for spec in specialisations.map(|res| res.map(|e| e.path())) {
+            let spec = spec?;
+            let name = spec
+                .file_name()
+                .ok_or("Could not get name of specialisation dir")?
+                .to_str()
+                .ok_or("Specialisation dir name was invalid UTF8")?;
+            let toplevel = fs::canonicalize(generation.join(format!("specialisation/{}", name)))?;
+
+            let mut boot_json_path = toplevel.join(JSON_FILENAME);
+            if !boot_json_path.exists() {
+                let specname = specialisationdir.join(format!("{}.json", name));
+                let subspec = describe_system(&toplevel)?;
+                let pretty = serde_json::to_string_pretty(&subspec)
+                    .map_err(|e| format!("Failed to make pretty JSON from bootspec:\n{}", e))?;
+
+                fs::write(&specname, pretty).map_err(|e| {
+                    format!("Failed to write JSON to '{}':\n{}", out_path.display(), e)
+                })?;
+                boot_json_path = specname;
+            }
+            toplevelspec.specialisation.insert(
+                SpecialisationName(name.to_string()),
+                SpecialisationDescription {
+                    bootspec: BootSpecPath(boot_json_path),
+                },
+            );
+        }
+    }
+
+    let pretty = serde_json::to_string_pretty(&toplevelspec)
+        .map_err(|e| format!("Failed to make pretty JSON from bootspec:\n{}", e))?;
+
+    fs::write(&out_path.join("boot.v1.json"), pretty)
+        .map_err(|e| format!("Failed to write JSON to '{}':\n{}", out_path.display(), e))?;
+
+    Ok(())
+}
+
+fn describe_system(generation: &Path) -> Result<BootJson> {
     let generation = generation
         .canonicalize()
         .map_err(|e| format!("Failed to canonicalize generation dir:\n{}", e))?;
@@ -50,28 +97,7 @@ pub fn synthesize_schema_from_generation(generation: &Path) -> Result<BootJson> 
 
     let initrd_secrets = Some(generation.join("append-initrd-secrets"));
 
-    let mut specialisation: HashMap<SpecialisationName, SpecialisationDescription> = HashMap::new();
-    if let Ok(specialisations) = fs::read_dir(generation.join("specialisation")) {
-        for spec in specialisations.map(|res| res.map(|e| e.path())) {
-            let spec = spec?;
-            let name = spec
-                .file_name()
-                .ok_or("Could not get name of specialisation dir")?
-                .to_str()
-                .ok_or("Specialisation dir name was invalid UTF8")?;
-            let toplevel = fs::canonicalize(generation.join(format!("specialisation/{}", name)))?;
-
-            let boot_json_path = toplevel.join(JSON_FILENAME);
-            if boot_json_path.exists() {
-                specialisation.insert(
-                    SpecialisationName(name.to_string()),
-                    SpecialisationDescription {
-                        bootspec: BootSpecPath(boot_json_path),
-                    },
-                );
-            }
-        }
-    }
+    let specialisation: HashMap<SpecialisationName, SpecialisationDescription> = HashMap::new();
 
     Ok(BootJson {
         schema_version: SCHEMA_VERSION,
@@ -94,7 +120,7 @@ mod tests {
     use bootspec::{BootJson, SystemConfigurationRoot, JSON_FILENAME, SCHEMA_VERSION};
     use tempfile::TempDir;
 
-    use super::synthesize_schema_from_generation;
+    use super::describe_system;
 
     fn scaffold(
         system_version: &str,
@@ -162,7 +188,7 @@ mod tests {
             None,
             false,
         );
-        let spec = synthesize_schema_from_generation(&generation).unwrap();
+        let spec = describe_system(&generation).unwrap();
 
         assert_eq!(
             spec,
@@ -202,7 +228,7 @@ mod tests {
             false,
         );
 
-        synthesize_schema_from_generation(&generation).unwrap();
+        describe_system(&generation).unwrap();
     }
 
     #[test]
@@ -228,7 +254,7 @@ mod tests {
 
         fs::write(generation.join(JSON_FILENAME), "").expect("Failed to write to test generation");
 
-        let spec = synthesize_schema_from_generation(&generation).unwrap();
+        let spec = describe_system(&generation).unwrap();
 
         assert_eq!(
             spec,
@@ -270,6 +296,6 @@ mod tests {
 
         fs::write(generation.join(JSON_FILENAME), "").expect("Failed to write to test generation");
 
-        synthesize_schema_from_generation(&generation).unwrap();
+        describe_system(&generation).unwrap();
     }
 }

@@ -11,7 +11,7 @@
   "initrdSecrets": "/nix/store/5zlpk42x7igrgghsxdprnz5c5mvy99z0-nixos-system-nixos-21.11.337422.3c5ae9be1f1/append-initrd-secrets",
   "specialisation": {
     "example": {
-      "bootspec": "./bootspec.example.json"
+      "bootspec": "./generated-synthesis/21.11-specialisations/specialisation/example.json"
     }
   },
   "toplevel": "/nix/store/5zlpk42x7igrgghsxdprnz5c5mvy99z0-nixos-system-nixos-21.11.337422.3c5ae9be1f1"
