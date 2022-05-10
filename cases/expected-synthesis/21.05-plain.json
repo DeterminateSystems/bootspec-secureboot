@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "label": "NixOS 21.05.4726.530a53dcbc9 (Linux 5.10.88)",
+  "kernel": "/nix/store/f0cg6yawrbnlzy1hz69fj5qr3jgsyazy-linux-5.10.88/bzImage",
+  "kernelParams": [
+    "loglevel=4",
+    "net.ifnames=0"
+  ],
+  "init": "/nix/store/hras4q3hh91xr0l7zq2y4rh716nzx0jm-nixos-system-nixos-21.05.4726.530a53dcbc9/init",
+  "initrd": "/nix/store/wdpinl220xfqgvsi53gmj0rjwm5gm7lz-initrd-linux-5.10.88/initrd",
+  "initrdSecrets": "/nix/store/hras4q3hh91xr0l7zq2y4rh716nzx0jm-nixos-system-nixos-21.05.4726.530a53dcbc9/append-initrd-secrets",
+  "specialisation": {},
+  "toplevel": "/nix/store/hras4q3hh91xr0l7zq2y4rh716nzx0jm-nixos-system-nixos-21.05.4726.530a53dcbc9"
+}

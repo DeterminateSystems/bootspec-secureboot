@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "label": "NixOS 20.09.4407.1c1f5649bb9 (Linux 5.4.122)",
+  "kernel": "/nix/store/dcfviw9iwl916p8ixlqxcgzia6vlpbax-linux-5.4.122/bzImage",
+  "kernelParams": [
+    "loglevel=4",
+    "net.ifnames=0"
+  ],
+  "init": "/nix/store/dqxa1k2la54qy4hva7q0in35dsj7qmy1-nixos-system-nixos-20.09.4407.1c1f5649bb9/init",
+  "initrd": "/nix/store/1k9w66n632wars6ivqhahl3y6xz7jx4j-initrd-linux-5.4.122/initrd",
+  "initrdSecrets": "/nix/store/dqxa1k2la54qy4hva7q0in35dsj7qmy1-nixos-system-nixos-20.09.4407.1c1f5649bb9/append-initrd-secrets",
+  "specialisation": {},
+  "toplevel": "/nix/store/dqxa1k2la54qy4hva7q0in35dsj7qmy1-nixos-system-nixos-20.09.4407.1c1f5649bb9"
+}

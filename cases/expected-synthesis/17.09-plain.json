@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "label": "NixOS 17.09.3269.14f9ee66e63 (Linux 4.9.86)",
+  "kernel": "/nix/store/nzh1zvj8rb6c5nkdyym1akw5mw6f2dcd-linux-4.9.86/bzImage",
+  "kernelParams": [
+    "loglevel=4"
+  ],
+  "init": "/nix/store/98l1076ly5lf7ys982c3j64l6wb6z1h5-nixos-system-nixos-17.09.3269.14f9ee66e63/init",
+  "initrd": "/nix/store/0h2wf8jn1k7gq1j9xa0j0i1jqxj41k2l-initrd/initrd",
+  "initrdSecrets": "/nix/store/98l1076ly5lf7ys982c3j64l6wb6z1h5-nixos-system-nixos-17.09.3269.14f9ee66e63/append-initrd-secrets",
+  "specialisation": {},
+  "toplevel": "/nix/store/98l1076ly5lf7ys982c3j64l6wb6z1h5-nixos-system-nixos-17.09.3269.14f9ee66e63"
+}

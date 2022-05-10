@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "label": "NixOS 20.03.3330.1db42b7fe38 (Linux 5.4.84)",
+  "kernel": "/nix/store/3ziih4sh2456f83xkv46msqx4v1wyhsl-linux-5.4.84/bzImage",
+  "kernelParams": [
+    "loglevel=4",
+    "net.ifnames=0"
+  ],
+  "init": "/nix/store/scc562n0d90pkc9bj5yfy7g2cyzdcy3w-nixos-system-nixos-20.03.3330.1db42b7fe38/init",
+  "initrd": "/nix/store/4rpbz6kgy4wrmsn2zq59dkb4an1c29f8-initrd-linux-5.4.84/initrd",
+  "initrdSecrets": "/nix/store/scc562n0d90pkc9bj5yfy7g2cyzdcy3w-nixos-system-nixos-20.03.3330.1db42b7fe38/append-initrd-secrets",
+  "specialisation": {},
+  "toplevel": "/nix/store/scc562n0d90pkc9bj5yfy7g2cyzdcy3w-nixos-system-nixos-20.03.3330.1db42b7fe38"
+}

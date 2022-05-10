@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "label": "NixOS 16.03.1349.dda40aa8d1 (Linux 4.4.31)",
+  "kernel": "/nix/store/4q1mf14c8kpswq62y9ajmh86nja4b4m8-linux-4.4.31/bzImage",
+  "kernelParams": [
+    "loglevel=4"
+  ],
+  "init": "/nix/store/02bpx7in85k7643ni2xkm5cznpavhna5-nixos-system-nixos-16.03.1349.dda40aa8d1/init",
+  "initrd": "/nix/store/pjacrjfmdjkrmfdwaff9dgkwb35x9j6l-initrd/initrd",
+  "initrdSecrets": "/nix/store/02bpx7in85k7643ni2xkm5cznpavhna5-nixos-system-nixos-16.03.1349.dda40aa8d1/append-initrd-secrets",
+  "specialisation": {},
+  "toplevel": "/nix/store/02bpx7in85k7643ni2xkm5cznpavhna5-nixos-system-nixos-16.03.1349.dda40aa8d1"
+}

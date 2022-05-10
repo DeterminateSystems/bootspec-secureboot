@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "label": "NixOS 19.09.2522.75f4ba05c63 (Linux 4.19.116)",
+  "kernel": "/nix/store/a83cfpg96injhrxqgqsmyz399sd259gy-linux-4.19.116/bzImage",
+  "kernelParams": [
+    "loglevel=4",
+    "net.ifnames=0"
+  ],
+  "init": "/nix/store/77l9xzmg2f4hr8iic36kylxdvivp1c82-nixos-system-nixos-19.09.2522.75f4ba05c63/init",
+  "initrd": "/nix/store/7mg4cy2cl93v3sgdf2h5wabhn4jqsrxj-initrd-linux-4.19.116/initrd",
+  "initrdSecrets": "/nix/store/77l9xzmg2f4hr8iic36kylxdvivp1c82-nixos-system-nixos-19.09.2522.75f4ba05c63/append-initrd-secrets",
+  "specialisation": {},
+  "toplevel": "/nix/store/77l9xzmg2f4hr8iic36kylxdvivp1c82-nixos-system-nixos-19.09.2522.75f4ba05c63"
+}

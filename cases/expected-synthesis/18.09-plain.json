@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "label": "NixOS 18.09.2574.a7e559a5504 (Linux 4.14.118)",
+  "kernel": "/nix/store/kj3w4v7nbjhd3d501kqpd17zspn7wh7l-linux-4.14.118/bzImage",
+  "kernelParams": [
+    "loglevel=4"
+  ],
+  "init": "/nix/store/72hz5jbhz5cz6zdsbc3c93j8ch48svmp-nixos-system-nixos-18.09.2574.a7e559a5504/init",
+  "initrd": "/nix/store/2y52wyp8i1586r0vcjwnawrcyqhvazkb-initrd/initrd",
+  "initrdSecrets": "/nix/store/72hz5jbhz5cz6zdsbc3c93j8ch48svmp-nixos-system-nixos-18.09.2574.a7e559a5504/append-initrd-secrets",
+  "specialisation": {},
+  "toplevel": "/nix/store/72hz5jbhz5cz6zdsbc3c93j8ch48svmp-nixos-system-nixos-18.09.2574.a7e559a5504"
+}
