@@ -31,7 +31,7 @@ Use our Nixpkgs branch, add bootspec-secureboot as an input, and add our module 
 {
   inputs.nixpkgs.url = "github:DeterminateSystems/nixpkgs/boot-spec-unstable";
   inputs.bootspec-secureboot = {
-    url = "github:DeterminateSystems/bootspec-secureboot/main";
+    url = "github:DeterminateSystems/bootspec-secureboot/update-to-rfc";
     inputs.nixpkgs.follows = "nixpkgs";
   };
 
