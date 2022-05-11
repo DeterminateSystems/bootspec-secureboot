@@ -17,7 +17,7 @@ in
     };
   };
   config = {
-    boot.loader.manual = {
+    boot.loader.external = {
       enable = true;
       installHook = pkgs.writeShellScript "install-bootloader"
         (
