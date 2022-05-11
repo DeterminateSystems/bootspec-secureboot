@@ -277,12 +277,11 @@ fn run_update(bootctl: &Path, esp: &Path) -> Result<()> {
     let status = Command::new(&bootctl).args(args).status()?;
 
     if !status.success() {
-        return Err(format!(
+        info!(
             "failed to run `{}` with args `{:?}`",
             &bootctl.display(),
             &args
-        )
-        .into());
+        );
     }
 
     Ok(())
