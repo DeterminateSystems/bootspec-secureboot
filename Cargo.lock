@@ -37,6 +37,7 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 [[package]]
 name = "bootspec"
 version = "0.1.0"
+source = "git+https://github.com/DeterminateSystems/bootspec?branch=import#f5eb0f6e50c8ecd30657e07124ef09f7e199e19a"
 dependencies = [
  "serde",
 ]
@@ -453,6 +454,7 @@ dependencies = [
 [[package]]
 name = "synthesize"
 version = "0.1.0"
+source = "git+https://github.com/DeterminateSystems/bootspec?branch=import#f5eb0f6e50c8ecd30657e07124ef09f7e199e19a"
 dependencies = [
  "bootspec",
  "serde_json",

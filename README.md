@@ -4,14 +4,6 @@ This repository is a research project that aims to improve the bootloader story 
 
 ## Crates
 
-### `bootspec`
-
-The `bootspec` crate provides various structures and constants useful for interacting with the NixOS boot specification.
-
-### `synthesize`
-
-The `synthesize` crate provides a CLI that, when provided a path to a NixOS generation and an output file location, will synthesize a boot specification document from the available information.
-
 ### `generator`
 
 The `generator` crate provides a CLI that, when provided a list of NixOS profile generations, will generate bootloader configuration for those generations to a bootloader-specific output directory.
@@ -32,22 +24,22 @@ In order to take this repository for a test drive, you must use a Nixpkgs that c
 
 ### Flakes
 
-Use our Nixpkgs branch, add bootspec as an input, and add our module to your configuration:
+Use our Nixpkgs branch, add bootspec-secureboot as an input, and add our module to your configuration:
 
 ```nix
 # flake.nix
 {
   inputs.nixpkgs.url = "github:DeterminateSystems/nixpkgs/boot-spec-unstable";
-  inputs.bootspec = {
-    url = "github:DeterminateSystems/bootspec/main";
+  inputs.bootspec-secureboot = {
+    url = "github:DeterminateSystems/bootspec-secureboot/main";
     inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = { self, nixpkgs, bootspec }: {
+  outputs = { self, nixpkgs, bootspec-secureboot }: {
     nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
       modules = [
-        bootspec.nixosModules.bootspec
+        bootspec-secureboot.nixosModules.bootspec-secureboot
         ./configuration.nix
       ];
     };
@@ -65,26 +57,26 @@ For example:
 $ export "NIX_PATH=nixpkgs=https://github.com/DeterminateSystems/nixpkgs/archive/refs/heads/boot-spec-unstable.tar.gz:$NIX_PATH"
 ```
 
-Then create a `bootspec.nix` file which contains:
+Then create a `bootspec-secureboot.nix` file which contains:
 
 ```nix
 let
-  bootspecSrc = builtins.fetchGit {
-    url = "https://github.com/DeterminateSystems/bootspec.git";
+  bootspecSecurebootSrc = builtins.fetchGit {
+    url = "https://github.com/DeterminateSystems/bootspec-secureboot.git";
     ref = "main";
   };
 in
 {
-  imports = [ "${bootspecSrc}/nixos-module.nix" ];
+  imports = [ "${bootspecSecurebootSrc}/nixos-module.nix" ];
   nixpkgs.overlays = [
     (final: prev: {
-      bootspec = import bootspecSrc;
+      bootspec-secureboot = import bootspecSecurebootSrc;
     })
   ];
 }
 ```
 
-Then add the `bootspec.nix` to your NixOS system's `configuration.nix`.
+Then add the `bootspec-secureboot.nix` to your NixOS system's `configuration.nix`.
 
 Then run `nixos-rebuild switch`.
 

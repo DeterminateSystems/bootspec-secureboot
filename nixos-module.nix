@@ -87,10 +87,10 @@ in
 
             cd "$scratch" || exit 1
 
-            ${pkgs.bootspec}/bin/generator /nix/var/nix/profiles/system-*-link \
+            ${pkgs.bootspec-secureboot}/bin/generator /nix/var/nix/profiles/system-*-link \
               ${generatorArgs}
 
-            ${pkgs.bootspec}/bin/installer \
+            ${pkgs.bootspec-secureboot}/bin/installer \
               --toplevel="$1" \
               ${installerArgs}
           ''
