@@ -39,9 +39,8 @@ fn flatten_impl(
         let toplevel = input.bootspec.toplevel.clone();
 
         toplevels.push(BootableToplevel {
-            system_version: input.bootspec.system_version,
+            label: input.bootspec.label,
             kernel: input.bootspec.kernel,
-            kernel_version: input.bootspec.kernel_version,
             kernel_params: input.bootspec.kernel_params,
             init: input.bootspec.init,
             initrd: input.bootspec.initrd,
@@ -52,11 +51,7 @@ fn flatten_impl(
         });
 
         for (name, desc) in input.bootspec.specialisation {
-            let bootspec_path = if let Some(bootspec_path) = desc.bootspec {
-                bootspec_path.0
-            } else {
-                return Err(format!("Specialisation '{}' didn't have a bootspec", name.0).into());
-            };
+            let bootspec_path = desc.bootspec.0;
 
             writeln!(
                 io::stderr(),

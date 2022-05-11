@@ -1,6 +1,6 @@
 use std::error::Error;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use bootspec::{BootJson, JSON_FILENAME};
 use regex::Regex;
@@ -23,13 +23,16 @@ lazy_static::lazy_static! {
     static ref PROFILE_RE: Regex = Regex::new("/system-profiles/(?P<profile>[^-]+)-(?P<generation>\\d+)-link").unwrap();
 }
 
-pub fn get_json(generation_path: PathBuf) -> Result<BootJson> {
-    let json_path = generation_path.join(JSON_FILENAME);
-    let json: BootJson = if json_path.exists() {
+pub fn get_json(tempdir: &Path, generation_path: PathBuf) -> Result<BootJson> {
+    let mut json_path = generation_path.join(JSON_FILENAME);
+    if !json_path.exists() {
+        synthesize::synthesize_schema_from_generation(tempdir, &generation_path)?;
+        json_path = tempdir.join("boot.v1.json");
+    }
+
+    let json: BootJson = {
         let contents = fs::read_to_string(&json_path)?;
         serde_json::from_str(&contents)?
-    } else {
-        synthesize::synthesize_schema_from_generation(&generation_path)?
     };
 
     Ok(json)
