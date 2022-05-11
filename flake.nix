@@ -45,7 +45,12 @@
 
               src = self;
 
-              cargoLock.lockFile = ./Cargo.lock;
+              cargoLock = {
+                lockFile = ./Cargo.lock;
+                outputHashes = {
+                  "bootspec-0.1.0" = "sha256-1CysX/Pt/DDxjzANgKxVHPAMQnucBh8RbIj/P+g2yR8=";
+                };
+              };
 
               postPatch = ''
                 substituteInPlace installer/build.rs \
