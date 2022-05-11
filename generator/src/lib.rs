@@ -24,18 +24,32 @@ lazy_static::lazy_static! {
 }
 
 pub fn get_json(tempdir: &Path, generation_path: PathBuf) -> Result<BootJson> {
-    let mut json_path = generation_path.join(JSON_FILENAME);
-    if !json_path.exists() {
-        synthesize::synthesize_schema_from_generation(tempdir, &generation_path)?;
-        json_path = tempdir.join("boot.v1.json");
+    let json_path = generation_path.join(JSON_FILENAME);
+
+    let mut json: Option<BootJson> = None;
+    if json_path.exists() {
+        if let Ok(cont) = fs::read_to_string(&json_path) {
+            if let Ok(parsed) = serde_json::from_str(&cont) {
+                json = Some(parsed)
+            }
+        }
     }
 
-    let json: BootJson = {
-        let contents = fs::read_to_string(&json_path)?;
-        serde_json::from_str(&contents)?
-    };
+    if json.is_none() {
+        let dest = tempdir.join("synthesis");
 
-    Ok(json)
+        // Time to synthesize
+        synthesize::synthesize_schema_from_generation(&generation_path, &dest)?;
+        let json_path = dest.join("boot.v1.json");
+
+        if let Ok(cont) = fs::read_to_string(&json_path) {
+            if let Ok(parsed) = serde_json::from_str(&cont) {
+                json = Some(parsed)
+            }
+        }
+    }
+
+    Ok(json.unwrap())
 }
 
 pub fn parse_generation(generation: &str) -> Result<(usize, Option<String>)> {
