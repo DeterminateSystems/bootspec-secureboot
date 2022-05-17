@@ -1,7 +1,5 @@
 [workspace]
 members = [
-  "bootspec",
   "generator",
   "installer",
-  "synthesize",
 ]

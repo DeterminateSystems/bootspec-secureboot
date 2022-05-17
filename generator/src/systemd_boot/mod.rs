@@ -155,7 +155,7 @@ fn linux_entry_impl(toplevel: &BootableToplevel, machine_id: &str) -> Result<(St
     let version = toplevel.version()?;
     let data = format!(
         r#"title {title}
-version Generation {generation} {version}
+version {version}
 linux {linux}
 initrd {initrd}
 options init={init} {params}
@@ -163,7 +163,6 @@ machine-id {machine_id}
 
 "#,
         title = title,
-        generation = generation,
         version = version,
         linux = linux,
         initrd = initrd,

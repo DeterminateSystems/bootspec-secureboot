@@ -1,5 +1,5 @@
 {
-  description = "bootloader-experimentation";
+  description = "bootloader-secureboot";
 
   inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
 
@@ -21,7 +21,7 @@
     {
       devShell = forAllSystems ({ system, pkgs, ... }:
         pkgs.mkShell {
-          name = "bootspec";
+          name = "bootspec-secureboot";
 
           buildInputs = with pkgs; [
             cargo
@@ -40,12 +40,17 @@
           in
           {
             package = pkgs.rustPlatform.buildRustPackage rec {
-              pname = "bootspec";
+              pname = "bootspec-secureboot";
               version = "unreleased";
 
               src = self;
 
-              cargoLock.lockFile = ./Cargo.lock;
+              cargoLock = {
+                lockFile = ./Cargo.lock;
+                outputHashes = {
+                  "bootspec-0.1.0" = "sha256-1CysX/Pt/DDxjzANgKxVHPAMQnucBh8RbIj/P+g2yR8=";
+                };
+              };
 
               postPatch = ''
                 substituteInPlace installer/build.rs \
@@ -56,11 +61,11 @@
 
       defaultPackage = forAllSystems ({ system, ... }: self.packages.${system}.package);
 
-      nixosModules.bootspec = {
+      nixosModules.bootspec-secureboot = {
         imports = [ ./nixos-module.nix ];
         nixpkgs.overlays = [
           (final: prev: {
-            bootspec = self.defaultPackage."${final.system}";
+            bootspec-secureboot = self.defaultPackage."${final.system}";
           })
         ];
       };

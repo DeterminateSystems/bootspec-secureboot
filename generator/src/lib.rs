@@ -1,6 +1,6 @@
 use std::error::Error;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use bootspec::{BootJson, JSON_FILENAME};
 use regex::Regex;
@@ -23,16 +23,33 @@ lazy_static::lazy_static! {
     static ref PROFILE_RE: Regex = Regex::new("/system-profiles/(?P<profile>[^-]+)-(?P<generation>\\d+)-link").unwrap();
 }
 
-pub fn get_json(generation_path: PathBuf) -> Result<BootJson> {
+pub fn get_json(tempdir: &Path, generation_path: PathBuf) -> Result<BootJson> {
     let json_path = generation_path.join(JSON_FILENAME);
-    let json: BootJson = if json_path.exists() {
-        let contents = fs::read_to_string(&json_path)?;
-        serde_json::from_str(&contents)?
-    } else {
-        synthesize::synthesize_schema_from_generation(&generation_path)?
-    };
 
-    Ok(json)
+    let mut json: Option<BootJson> = None;
+    if json_path.exists() {
+        if let Ok(cont) = fs::read_to_string(&json_path) {
+            if let Ok(parsed) = serde_json::from_str(&cont) {
+                json = Some(parsed)
+            }
+        }
+    }
+
+    if json.is_none() {
+        let dest = tempdir.join("synthesis");
+
+        // Time to synthesize
+        synthesize::synthesize_schema_from_generation(&generation_path, &dest)?;
+        let json_path = dest.join("boot.v1.json");
+
+        if let Ok(cont) = fs::read_to_string(&json_path) {
+            if let Ok(parsed) = serde_json::from_str(&cont) {
+                json = Some(parsed)
+            }
+        }
+    }
+
+    Ok(json.unwrap())
 }
 
 pub fn parse_generation(generation: &str) -> Result<(usize, Option<String>)> {
