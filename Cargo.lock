@@ -37,7 +37,7 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 [[package]]
 name = "bootspec"
 version = "0.1.0"
-source = "git+https://github.com/DeterminateSystems/bootspec?branch=rfc-embed-subs#220e78c9b280fe13c83da2f14a8d1f5ec20a6321"
+source = "git+https://github.com/DeterminateSystems/bootspec?branch=main#d2ae15a113719d4c1eb511aff726082819f51e4b"
 dependencies = [
  "serde",
 ]
@@ -454,7 +454,7 @@ dependencies = [
 [[package]]
 name = "synthesize"
 version = "0.1.0"
-source = "git+https://github.com/DeterminateSystems/bootspec?branch=rfc-embed-subs#220e78c9b280fe13c83da2f14a8d1f5ec20a6321"
+source = "git+https://github.com/DeterminateSystems/bootspec?branch=main#d2ae15a113719d4c1eb511aff726082819f51e4b"
 dependencies = [
  "bootspec",
  "serde_json",
