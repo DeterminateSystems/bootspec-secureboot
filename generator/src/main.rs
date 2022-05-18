@@ -37,15 +37,13 @@ fn main() -> Result<()> {
                 .map(|(index, profile)| {
                     let bootspec = generator::get_json(PathBuf::from(gen));
 
-                    if let Ok(bootspec) = bootspec {
-                        Some(Generation {
+                    bootspec
+                        .map(|bootspec| Generation {
                             index,
                             profile,
                             bootspec,
                         })
-                    } else {
-                        None
-                    }
+                        .ok()
                 })
                 .flatten()
         })
