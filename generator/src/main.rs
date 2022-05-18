@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use generator::bootable::{self, Bootable, EfiProgram};
 use generator::{systemd_boot, Generation, Result};
 use structopt::StructOpt;
-use tempfile::{tempdir, tempdir_in, TempDir};
 
 #[derive(Default, Debug, StructOpt)]
 struct Args {
@@ -28,8 +27,6 @@ struct Args {
 
 fn main() -> Result<()> {
     let args = Args::from_args();
-    let parent_tempdir = tempdir()?;
-    let mut tempdirs: Vec<TempDir> = vec![];
 
     let generations = args
         .generations
@@ -38,21 +35,15 @@ fn main() -> Result<()> {
             generator::parse_generation(&gen)
                 .ok()
                 .map(|(index, profile)| {
-                    let tempdir =
-                        tempdir_in(parent_tempdir.path()).expect("Failed to get a new tempdir");
+                    let bootspec = generator::get_json(PathBuf::from(gen));
 
-                    let bootspec = generator::get_json(tempdir.path(), PathBuf::from(gen));
-                    tempdirs.push(tempdir);
-
-                    if let Ok(bootspec) = bootspec {
-                        Some(Generation {
+                    bootspec
+                        .map(|bootspec| Generation {
                             index,
                             profile,
                             bootspec,
                         })
-                    } else {
-                        None
-                    }
+                        .ok()
                 })
                 .flatten()
         })

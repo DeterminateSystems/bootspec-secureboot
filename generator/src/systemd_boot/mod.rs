@@ -102,13 +102,12 @@ fn efi_entry_impl(efi: &EfiProgram, machine_id: &str) -> Result<(String, Content
     let version = efi.source.version()?;
     let data = format!(
         r#"title {title}
-version Generation {generation} {version}
+version {version}
 efi {efi}
 machine-id {machine_id}
 
 "#,
         title = title,
-        generation = generation,
         version = version,
         efi = unified,
         machine_id = machine_id,

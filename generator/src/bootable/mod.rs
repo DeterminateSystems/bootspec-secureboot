@@ -1,7 +1,6 @@
-use std::fs;
 use std::io::{self, Write};
 
-use bootspec::{BootJson, SpecialisationName};
+use bootspec::SpecialisationName;
 
 use crate::{Generation, Result};
 
@@ -51,22 +50,18 @@ fn flatten_impl(
         });
 
         for (name, desc) in input.bootspec.specialisation {
-            let bootspec_path = desc.bootspec.0;
-
             writeln!(
                 io::stderr(),
                 "Flattening specialisation '{name}' of toplevel {toplevel}: {path}",
                 toplevel = input.bootspec.toplevel.0.display(),
                 name = name.0,
-                path = bootspec_path.display()
+                path = desc.toplevel.0.display()
             )?;
 
-            let json = fs::read_to_string(&bootspec_path)?;
-            let parsed: BootJson = serde_json::from_str(&json)?;
             let gen = Generation {
                 index: input.index,
                 profile: input.profile.clone(),
-                bootspec: parsed,
+                bootspec: desc,
             };
 
             toplevels.extend(self::flatten_impl(vec![gen], Some(name))?);
