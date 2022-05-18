@@ -24,7 +24,7 @@ lazy_static::lazy_static! {
 }
 
 pub fn get_json(generation_path: PathBuf) -> Result<BootJson> {
-    let json_path = generation_path.join(JSON_FILENAME);
+    let json_path = generation_path.join("bootspec").join(JSON_FILENAME);
 
     let mut json: Option<BootJson> = None;
     if json_path.exists() {
