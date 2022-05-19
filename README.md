@@ -29,9 +29,9 @@ Use our Nixpkgs branch, add bootspec-secureboot as an input, and add our module 
 ```nix
 # flake.nix
 {
-  inputs.nixpkgs.url = "github:DeterminateSystems/nixpkgs/boot-spec-unstable";
+  inputs.nixpkgs.url = "github:DeterminateSystems/nixpkgs/bootspec-rfc";
   inputs.bootspec-secureboot = {
-    url = "github:DeterminateSystems/bootspec-secureboot/update-to-rfc";
+    url = "github:DeterminateSystems/bootspec-secureboot/main";
     inputs.nixpkgs.follows = "nixpkgs";
   };
 
@@ -49,12 +49,12 @@ Use our Nixpkgs branch, add bootspec-secureboot as an input, and add our module 
 
 ### Without Flakes
 
-Use our fork of Nixpkgs's `boot-spec-unstable` branch: https://github.com/DeterminateSystems/nixpkgs/tree/boot-spec-unstable.
+Use our fork of Nixpkgs's `bootspec-rfc` branch: https://github.com/DeterminateSystems/nixpkgs/tree/bootspec-rfc.
 
 For example:
 
 ```
-$ export "NIX_PATH=nixpkgs=https://github.com/DeterminateSystems/nixpkgs/archive/refs/heads/boot-spec-unstable.tar.gz:$NIX_PATH"
+$ export "NIX_PATH=nixpkgs=https://github.com/DeterminateSystems/nixpkgs/archive/refs/heads/bootspec-rfc.tar.gz:$NIX_PATH"
 ```
 
 Then create a `bootspec-secureboot.nix` file which contains:
