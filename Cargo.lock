@@ -37,9 +37,10 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 [[package]]
 name = "bootspec"
 version = "0.1.0"
-source = "git+https://github.com/DeterminateSystems/bootspec?branch=main#d2ae15a113719d4c1eb511aff726082819f51e4b"
+source = "git+https://github.com/DeterminateSystems/bootspec?branch=main#784725ed5ad60d6a02155df42d29747387604e41"
 dependencies = [
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -454,9 +455,10 @@ dependencies = [
 [[package]]
 name = "synthesize"
 version = "0.1.0"
-source = "git+https://github.com/DeterminateSystems/bootspec?branch=main#d2ae15a113719d4c1eb511aff726082819f51e4b"
+source = "git+https://github.com/DeterminateSystems/bootspec?branch=main#784725ed5ad60d6a02155df42d29747387604e41"
 dependencies = [
  "bootspec",
+ "clap 3.1.18",
  "serde_json",
  "tempfile",
 ]
