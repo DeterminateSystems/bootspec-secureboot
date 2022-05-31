@@ -48,7 +48,7 @@
               cargoLock = {
                 lockFile = ./Cargo.lock;
                 outputHashes = {
-                  "bootspec-0.1.0" = "sha256-N5d+WZc/sRfd6DQvWhrVbifDmd5pOSuH32GI8DKhK78=";
+                  "bootspec-0.1.0" = "sha256-LYhbRoujzR2sl5d4ew9oH+EFiqYjgzE/gwl1eAODcMU=";
                 };
               };
 

@@ -2,6 +2,7 @@ use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
 
+use bootspec::v1::GenerationV1;
 use bootspec::{BootJson, JSON_FILENAME};
 use regex::Regex;
 
@@ -36,9 +37,7 @@ pub fn get_json(generation_path: PathBuf) -> Result<BootJson> {
     }
 
     if json.is_none() {
-        json = Some(synthesize::synthesize_schema_from_generation(
-            &generation_path,
-        )?);
+        json = Some(GenerationV1::synthesize(&generation_path)?);
     }
 
     Ok(json.unwrap())
