@@ -155,7 +155,6 @@ dependencies = [
  "regex",
  "serde_json",
  "structopt",
- "synthesize",
  "tempfile",
 ]
 
@@ -450,17 +449,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-xid",
-]
-
-[[package]]
-name = "synthesize"
-version = "0.1.0"
-source = "git+https://github.com/DeterminateSystems/bootspec?branch=main#308253d2d1057ae217eabdaa3af269010435edce"
-dependencies = [
- "bootspec",
- "clap 3.1.18",
- "serde_json",
- "tempfile",
 ]
 
 [[package]]
