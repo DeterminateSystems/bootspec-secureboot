@@ -8,3 +8,7 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+    ignore:
+      # Bumping bootspec requires manual intervention to update its hash,
+      # so we don't want to automate it.
+      - dependency-name: "bootspec"
