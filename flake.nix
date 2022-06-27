@@ -35,10 +35,7 @@
 
       packages = forAllSystems
         ({ system, pkgs, ... }:
-          let
-            patched_sbattach = import ./installer/patched-sbattach.nix { inherit pkgs; };
-          in
-          {
+          rec {
             package = pkgs.rustPlatform.buildRustPackage rec {
               pname = "bootspec-secureboot";
               version = "unreleased";
@@ -48,15 +45,17 @@
               cargoLock = {
                 lockFile = ./Cargo.lock;
                 outputHashes = {
-                  "bootspec-0.1.0" = "sha256-LYhbRoujzR2sl5d4ew9oH+EFiqYjgzE/gwl1eAODcMU=";
+                  "bootspec-0.1.0" = "sha256-pQGUqc4ZgGsF08imir0KUbiDOAHRDtawrUIY9QHtgs4=";
                 };
               };
 
               postPatch = ''
                 substituteInPlace installer/build.rs \
-                  --replace "@patched_sbattach@" "${patched_sbattach}"
+                  --replace "@patched_sbattach@" "${sbattach}"
               '';
             };
+
+            sbattach = import ./installer/patched-sbattach.nix { inherit pkgs; };
           });
 
       defaultPackage = forAllSystems ({ system, ... }: self.packages.${system}.package);
