@@ -35,10 +35,7 @@
 
       packages = forAllSystems
         ({ system, pkgs, ... }:
-          let
-            patched_sbattach = import ./installer/patched-sbattach.nix { inherit pkgs; };
-          in
-          {
+          rec {
             package = pkgs.rustPlatform.buildRustPackage rec {
               pname = "bootspec-secureboot";
               version = "unreleased";
@@ -54,9 +51,11 @@
 
               postPatch = ''
                 substituteInPlace installer/build.rs \
-                  --replace "@patched_sbattach@" "${patched_sbattach}"
+                  --replace "@patched_sbattach@" "${sbattach}"
               '';
             };
+
+            sbattach = import ./installer/patched-sbattach.nix { inherit pkgs; };
           });
 
       defaultPackage = forAllSystems ({ system, ... }: self.packages.${system}.package);
