@@ -16,7 +16,7 @@ doctest = false
 chrono = "0.4.19"
 lazy_static = "1.4.0"
 regex = { version = "1.6.0" }
-serde_json = "1.0.83"
+serde_json = "1.0.87"
 tempfile = "3.3.0"
 structopt = { version = "0.3.26", default-features = false }
 bootspec = { git = "https://github.com/DeterminateSystems/bootspec", branch = "main" }
