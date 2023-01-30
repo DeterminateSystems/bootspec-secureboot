@@ -43,7 +43,11 @@ impl BootableToplevel {
 
     pub fn version(&self) -> Result<String> {
         let ctime = fs::metadata(&self.toplevel.0)?.ctime();
-        let date = Local.timestamp(ctime, 0).format("%Y-%m-%d");
+        let date = Local
+            .timestamp_opt(ctime, 0)
+            .earliest()
+            .map(|d| format!("{}", d.format("%Y-%m-%d")))
+            .unwrap_or("unknown date".to_string());
         let description = format!(
             "{label}{specialisation}, Built on {date}",
             specialisation = if let Some(ref specialisation) = self.specialisation_name {
