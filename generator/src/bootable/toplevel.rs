@@ -47,7 +47,10 @@ impl BootableToplevel {
             .timestamp_opt(ctime, 0)
             .earliest()
             .map(|d| format!("{}", d.format("%Y-%m-%d")))
-            .unwrap_or("unknown date".to_string());
+            .ok_or(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "could not convert toplevel ctime to timestamp",
+            ))?;
         let description = format!(
             "{label}{specialisation}, Built on {date}",
             specialisation = if let Some(ref specialisation) = self.specialisation_name {
