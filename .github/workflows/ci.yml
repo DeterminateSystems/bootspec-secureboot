@@ -10,8 +10,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: DeterminateSystems/nix-installer-action@main
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
     - name: Check rustfmt
       run: nix develop --command cargo fmt -- --check
 
@@ -20,8 +18,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: DeterminateSystems/nix-installer-action@main
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
     - name: Build
       run: nix build -L
 
@@ -30,8 +26,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: DeterminateSystems/nix-installer-action@main
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
     - uses: codespell-project/codespell-problem-matcher@v1
     - name: Check Spelling
       run: nix develop --command codespell --ignore-words-list crate,pullrequest,pullrequests .
@@ -43,8 +37,6 @@ jobs:
       with:
         fetch-depth: 0
     - uses: DeterminateSystems/nix-installer-action@main
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
     - name: Check nixpkgs-fmt formatting
       run: nix develop --command sh -c "git ls-files '*.nix' | xargs nixpkgs-fmt --check"
 
