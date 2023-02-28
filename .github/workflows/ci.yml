@@ -9,10 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - uses: cachix/install-nix-action@v18
-      with:
-        extra_nix_config: |
-          access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+    - uses: DeterminateSystems/nix-installer-action@main
     - name: Check rustfmt
       run: nix develop --command cargo fmt -- --check
 
@@ -20,10 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - uses: cachix/install-nix-action@v18
-      with:
-        extra_nix_config: |
-          access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+    - uses: DeterminateSystems/nix-installer-action@main
     - name: Build
       run: nix build -L
 
@@ -31,10 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
-    - uses: cachix/install-nix-action@v18
-      with:
-        extra_nix_config: |
-          access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+    - uses: DeterminateSystems/nix-installer-action@main
     - uses: codespell-project/codespell-problem-matcher@v1
     - name: Check Spelling
       run: nix develop --command codespell --ignore-words-list crate,pullrequest,pullrequests .
@@ -45,10 +36,7 @@ jobs:
     - uses: actions/checkout@v3
       with:
         fetch-depth: 0
-    - uses: cachix/install-nix-action@v18
-      with:
-        extra_nix_config: |
-          access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+    - uses: DeterminateSystems/nix-installer-action@main
     - name: Check nixpkgs-fmt formatting
       run: nix develop --command sh -c "git ls-files '*.nix' | xargs nixpkgs-fmt --check"
 
