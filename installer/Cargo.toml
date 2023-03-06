@@ -16,6 +16,6 @@ libc = "0.2.139"
 log = "0.4.17"
 # generator = { path = "../generator" }
 regex = { version = "1.7.1", default-features = false, features = ["std", "unicode"] }
-tempfile = "3.3.0"
+tempfile = "3.4.0"
 walkdir = "2.3.2"
 # askama = "0.10.5"
