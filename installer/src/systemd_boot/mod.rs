@@ -3,6 +3,7 @@ use std::fmt::Write as _;
 use std::fs;
 use std::io::Write as _;
 use std::path::Path;
+use std::process::exit;
 
 use log::{debug, trace, warn};
 use regex::Regex;
@@ -165,9 +166,19 @@ fn remove_old_files(generations: &[Generation], path: &Path) -> Result<()> {
         let f = entry?.path();
         let name = f.file_name().ok_or("filename terminated in ..")?;
 
+        // fwupd puts its own files under "fw" directory, and doesn't remove them
+        // This avoids unhelpful error messages from fs::remove_file later
+        if name == "fw" && f.is_dir() {
+            trace!("Skipping firmware update directory \"fw\"");
+            continue;
+        }
+
         if !required_filenames.iter().any(|e| e == name) {
             trace!("removing kernel/initrd file {:?}", f);
-            fs::remove_file(f)?;
+            if let Err(e) = fs::remove_file(f.clone()) {
+                eprintln!("Error removing file \"{}\": {}", f.display(), e);
+                exit(e.raw_os_error().unwrap());
+            }
         }
     }
 
