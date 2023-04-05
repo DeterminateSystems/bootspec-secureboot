@@ -12,7 +12,7 @@ crc = "3.0.1"
 env_logger = { version = "0.10.0", default-features = false }
 glob = "0.3.0"
 lazy_static = "1.4.0"
-libc = "0.2.139"
+libc = "0.2.141"
 log = "0.4.17"
 # generator = { path = "../generator" }
 regex = { version = "1.7.1", default-features = false, features = ["std", "unicode"] }
