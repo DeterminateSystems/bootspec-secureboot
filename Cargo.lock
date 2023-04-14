@@ -233,6 +233,7 @@ dependencies = [
  "chrono",
  "lazy_static",
  "regex",
+ "serde",
  "serde_json",
  "structopt",
  "tempfile",
