@@ -56,6 +56,8 @@
             };
 
             sbattach = import ./installer/patched-sbattach.nix { inherit pkgs; };
+
+            pcrTest = pkgs.callPackage ./pcr-test.nix { inherit inputs; };
           });
 
       defaultPackage = forAllSystems ({ system, ... }: self.packages.${system}.package);

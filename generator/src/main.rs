@@ -1,6 +1,7 @@
+use std::fs;
 use std::path::PathBuf;
 
-use generator::bootable::{self, Bootable, EfiProgram};
+use generator::bootable::{self, Bootable, EfiProgram, PcrPhase};
 use generator::{systemd_boot, Generation, Result};
 use structopt::StructOpt;
 
@@ -13,6 +14,12 @@ struct Args {
     /// The `objcopy` binary
     #[structopt(long, requires_all = &["systemd-efi-stub", "unified-efi"])]
     objcopy: Option<PathBuf>,
+    /// The `systemd-measure` binary
+    #[structopt(long, requires_all = &["systemd-efi-stub", "unified-efi"])]
+    systemd_measure: Option<PathBuf>,
+    /// The pcr phase spec json file
+    #[structopt(long, requires_all = &["systemd-efi-stub", "unified-efi"])]
+    pcr_phases: Option<PathBuf>,
     /// Whether or not to combine the initrd and kernel into a unified EFI file
     #[structopt(long, requires_all = &["systemd-efi-stub", "objcopy"])]
     unified_efi: bool,
@@ -58,9 +65,16 @@ fn main() -> Result<()> {
         toplevels.into_iter().map(Bootable::Linux).collect()
     };
 
+    let pcr_phases: Option<Vec<PcrPhase>> = args.pcr_phases.map(|json_path| {
+        let cont = fs::read_to_string(json_path).unwrap();
+        serde_json::from_str(&cont).unwrap()
+    });
+
     systemd_boot::generate(
         bootables,
         args.objcopy,
+        args.systemd_measure,
+        pcr_phases,
         args.systemd_efi_stub,
         args.systemd_machine_id_setup,
     )?;

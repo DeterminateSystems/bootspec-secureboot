@@ -6,7 +6,7 @@ use std::process::Command;
 
 use bootspec::SpecialisationName;
 
-use crate::bootable::{Bootable, BootableToplevel, EfiProgram};
+use crate::bootable::{Bootable, BootableToplevel, EfiProgram, PcrPhase};
 use crate::Result;
 
 // FIXME: placeholder dir
@@ -38,6 +38,8 @@ pub struct Contents {
 pub fn generate(
     bootables: Vec<Bootable>,
     objcopy: Option<PathBuf>,
+    systemd_measure: Option<PathBuf>,
+    pcr_phases: Option<Vec<PcrPhase>>,
     systemd_efi_stub: Option<PathBuf>,
     systemd_machine_id_setup: PathBuf,
 ) -> Result<()> {
@@ -58,7 +60,13 @@ pub fn generate(
                 let objcopy = objcopy.as_ref().unwrap();
                 let systemd_efi_stub = systemd_efi_stub.as_ref().unwrap();
 
-                efi.write_unified_efi(objcopy, Path::new(&unified_dest), systemd_efi_stub)?;
+                efi.write_unified_efi(
+                    objcopy,
+                    &systemd_measure,
+                    &pcr_phases,
+                    Path::new(&unified_dest),
+                    systemd_efi_stub,
+                )?;
             }
             Bootable::Linux(toplevel) => {
                 let (path, contents) = self::linux_entry_impl(&toplevel, &machine_id)?;

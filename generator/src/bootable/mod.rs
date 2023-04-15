@@ -5,9 +5,11 @@ use bootspec::SpecialisationName;
 use crate::{Generation, Result};
 
 mod efi;
+mod pcr;
 mod toplevel;
 
 pub use efi::EfiProgram;
+pub use pcr::PcrPhase;
 pub use toplevel::BootableToplevel;
 
 pub enum Bootable {
