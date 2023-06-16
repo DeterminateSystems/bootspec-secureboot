@@ -21,6 +21,14 @@ jobs:
     - name: Build
       run: nix build -L
 
+  NixFlakeCheck:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: DeterminateSystems/flake-checker-action@v3
+      with:
+        fail-mode: true
+
   Spelling:
     runs-on: ubuntu-latest
     steps:
