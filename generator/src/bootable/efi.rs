@@ -16,7 +16,7 @@ impl EfiProgram {
         Self { source }
     }
 
-    pub fn write_unified_efi(&self, objcopy: &Path, outpath: &Path, stub: &Path) -> Result<()> {
+    pub fn write_unified_efi(&self, ukify: &Path, outpath: &Path, stub: &Path) -> Result<()> {
         let generation_path = &self.source.toplevel.0;
         let mut kernel_params = NamedTempFile::new()?;
 
@@ -29,26 +29,12 @@ impl EfiProgram {
 
         // Offsets taken from one of systemd's EFI tests:
         // https://github.com/systemd/systemd/blob/01d0123f044d6c090b6ac2f6d304de2bdb19ae3b/test/test-efi-create-disk.sh#L32-L38
-        let status = Command::new(objcopy)
+        let status = Command::new(ukify)
             .args(&[
-                "--add-section",
-                &format!(".osrel={}/etc/os-release", generation_path.display()),
-                "--change-section-vma",
-                ".osrel=0x20000",
-                "--add-section",
-                &format!(".cmdline={}", kernel_params.path().display()),
-                "--change-section-vma",
-                ".cmdline=0x30000",
-                "--add-section",
-                &format!(".linux={}/kernel", generation_path.display()),
-                "--change-section-vma",
-                ".linux=0x2000000",
-                "--add-section",
-                &format!(".initrd={}/initrd", generation_path.display()),
-                "--change-section-vma",
-                ".initrd=0x3000000",
-                &stub.display().to_string(),
-                &outpath.display().to_string(),
+                &format!("--linux={}/kernel", generation_path.display()),
+                &format!("--initrd={}/initrd", generation_path.display()),
+                &format!("--cmdline=@{}", kernel_params.path().display()),
+                &format!("--os-release=@{}/etc/os-release", generation_path.display()),
             ])
             .status()?;
 

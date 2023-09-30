@@ -29,8 +29,8 @@ in
             ++ (lib.optionals config.boot.loader.secureboot.enable [
               "--unified-efi"
 
-              "--objcopy"
-              "${pkgs.binutils-unwrapped}/bin/objcopy"
+              "--ukify"
+              "${config.systemd.package.override { withUkify = true; }}/lib/systemd/ukify"
 
               "--systemd-efi-stub"
               "${config.systemd.package}/lib/systemd/boot/efi/linuxx64.efi.stub"
