@@ -27,17 +27,14 @@ impl EfiProgram {
             self.source.kernel_params.join(" ")
         )?;
 
-        println!("**--linux={}/kernel", generation_path.display());
-        println!("**--initrd={}/initrd", generation_path.display());
-        println!("**--cmdline=@{}", kernel_params.path().display());
-        println!("**--os-release=@{}/etc/os-release", generation_path.display());
-
         let status = Command::new(ukify)
             .args(&[
+                "build",
                 &format!("--linux={}/kernel", generation_path.display()),
                 &format!("--initrd={}/initrd", generation_path.display()),
                 &format!("--cmdline=@{}", kernel_params.path().display()),
                 &format!("--os-release=@{}/etc/os-release", generation_path.display()),
+                &format!("--output={}", outpath.display().to_string()),
             ])
             .status()?;
 

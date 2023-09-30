@@ -61,12 +61,10 @@ fn main() -> Result<()> {
     systemd_boot::generate(
         bootables,
         args.ukify,
+        //In fact systemd_efi_stub is no longer needed here.
         args.systemd_efi_stub,
         args.systemd_machine_id_setup,
     )?;
-
-    // TODO: grub
-    // grub::generate(bootables, args.objcopy)?;
 
     Ok(())
 }
