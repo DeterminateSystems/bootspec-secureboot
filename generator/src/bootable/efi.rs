@@ -27,8 +27,11 @@ impl EfiProgram {
             self.source.kernel_params.join(" ")
         )?;
 
-        // Offsets taken from one of systemd's EFI tests:
-        // https://github.com/systemd/systemd/blob/01d0123f044d6c090b6ac2f6d304de2bdb19ae3b/test/test-efi-create-disk.sh#L32-L38
+        println!("**--linux={}/kernel", generation_path.display());
+        println!("**--initrd={}/initrd", generation_path.display());
+        println!("**--cmdline=@{}", kernel_params.path().display());
+        println!("**--os-release=@{}/etc/os-release", generation_path.display());
+
         let status = Command::new(ukify)
             .args(&[
                 &format!("--linux={}/kernel", generation_path.display()),
