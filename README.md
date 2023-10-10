@@ -1,3 +1,9 @@
+# Archival Notice
+
+This project has been superseded by the wonderful [lanzaboote](https://github.com/nix-community/lanzaboote/) project.
+
+---
+
 # bootspec
 
 This repository is a research project that aims to improve the bootloader story in NixOS.
