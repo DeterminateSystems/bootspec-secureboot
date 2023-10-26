@@ -29,8 +29,8 @@ in
             ++ (lib.optionals config.boot.loader.secureboot.enable [
               "--unified-efi"
 
-              "--objcopy"
-              "${pkgs.binutils-unwrapped}/bin/objcopy"
+              "--ukify"
+              "${config.systemd.package.override { withUkify = true; }}/lib/systemd/ukify"
 
               "--systemd-efi-stub"
               "${config.systemd.package}/lib/systemd/boot/efi/linuxx64.efi.stub"
@@ -77,6 +77,8 @@ in
               ]));
           in
           ''
+            mkdir -p /usr/lib/
+            mount --bind ${config.systemd.package}/lib /usr/lib
             set -eux
 
             scratch=$(mktemp -d -t tmp.XXXXXXXXXX)
@@ -94,6 +96,8 @@ in
               --toplevel="$1" \
               $([ ! -z ''${NIXOS_INSTALL_BOOTLOADER+x} ] && echo --install) \
               ${installerArgs}
+
+            umount /usr/lib
           ''
         );
     };

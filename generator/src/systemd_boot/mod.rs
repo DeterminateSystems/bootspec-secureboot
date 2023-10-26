@@ -37,7 +37,7 @@ pub struct Contents {
 
 pub fn generate(
     bootables: Vec<Bootable>,
-    objcopy: Option<PathBuf>,
+    ukify: Option<PathBuf>,
     systemd_efi_stub: Option<PathBuf>,
     systemd_machine_id_setup: PathBuf,
 ) -> Result<()> {
@@ -55,10 +55,10 @@ pub fn generate(
                 write!(f, "{}", contents.conf)?;
 
                 let unified_dest = contents.unified_dest.unwrap();
-                let objcopy = objcopy.as_ref().unwrap();
+                let ukify = ukify.as_ref().unwrap();
                 let systemd_efi_stub = systemd_efi_stub.as_ref().unwrap();
 
-                efi.write_unified_efi(objcopy, Path::new(&unified_dest), systemd_efi_stub)?;
+                efi.write_unified_efi(ukify, Path::new(&unified_dest), systemd_efi_stub)?;
             }
             Bootable::Linux(toplevel) => {
                 let (path, contents) = self::linux_entry_impl(&toplevel, &machine_id)?;

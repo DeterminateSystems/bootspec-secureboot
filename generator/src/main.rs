@@ -8,13 +8,13 @@ use structopt::StructOpt;
 struct Args {
     // TODO: --out-dir?
     /// The systemd-boot EFI stub used to create a unified EFI file
-    #[structopt(long, requires_all = &["objcopy", "unified-efi"])]
+    #[structopt(long, requires_all = &["ukify", "unified-efi"])]
     systemd_efi_stub: Option<PathBuf>,
-    /// The `objcopy` binary
+    /// The `ukify` binary
     #[structopt(long, requires_all = &["systemd-efi-stub", "unified-efi"])]
-    objcopy: Option<PathBuf>,
+    ukify: Option<PathBuf>,
     /// Whether or not to combine the initrd and kernel into a unified EFI file
-    #[structopt(long, requires_all = &["systemd-efi-stub", "objcopy"])]
+    #[structopt(long, requires_all = &["systemd-efi-stub", "ukify"])]
     unified_efi: bool,
     /// The `systemd-machine-id-setup` binary
     // TODO: maybe just pass in machine_id as an arg; if empty, omit from configuration?
@@ -60,13 +60,11 @@ fn main() -> Result<()> {
 
     systemd_boot::generate(
         bootables,
-        args.objcopy,
+        args.ukify,
+        //In fact systemd_efi_stub is no longer needed here.
         args.systemd_efi_stub,
         args.systemd_machine_id_setup,
     )?;
-
-    // TODO: grub
-    // grub::generate(bootables, args.objcopy)?;
 
     Ok(())
 }
